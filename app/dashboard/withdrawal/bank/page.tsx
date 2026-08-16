@@ -1,0 +1,161 @@
+'use client';
+
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { DashboardShell } from '@/components/dashboard-shell';
+import { getUserStorageKey } from '@/lib/auth';
+import { canAfford, formatCurrency, getStoredBalance, subscribeToBalance } from '@/lib/balance';
+
+type WithdrawalRequest = {
+  id: number;
+  amount: number;
+  method: string;
+  status: 'Fee pending' | 'Pending' | 'Approved' | 'Declined';
+  walletAddress?: string;
+  bankName?: string;
+  accountName?: string;
+  accountNumber?: string;
+};
+
+const storageKey = 'atlas-withdrawal-requests';
+
+export default function BankWithdrawalPage() {
+  const router = useRouter();
+  const [amount, setAmount] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [balance, setBalance] = useState(0);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setBalance(getStoredBalance());
+    const unsubscribe = subscribeToBalance(setBalance);
+    return unsubscribe;
+  }, []);
+
+  const numericAmount = Number(amount);
+  const belowMinimum = Boolean(amount && numericAmount < 750);
+  const canSubmit = Boolean(amount && numericAmount >= 750 && bankName && accountName && accountNumber);
+  const insufficientBalance = Boolean(amount && numericAmount > 0 && !canAfford(numericAmount));
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+
+    if (belowMinimum) {
+      setMessage('The minimum bank withdrawal is $750.00. Please enter a qualifying amount to continue.');
+      return;
+    }
+
+    if (!canAfford(numericAmount)) {
+      setMessage('Insufficient balance. Deposit funds to top up before withdrawing.');
+      return;
+    }
+
+    const stored = window.localStorage.getItem(getUserStorageKey(storageKey));
+    const requests: WithdrawalRequest[] = stored ? JSON.parse(stored) : [];
+    const nextRequest: WithdrawalRequest = {
+      id: Date.now(),
+      amount: numericAmount,
+      method: 'bank',
+      status: 'Fee pending',
+      bankName,
+      accountName,
+      accountNumber,
+    };
+
+    const nextRequests = [nextRequest, ...requests];
+    window.localStorage.setItem(getUserStorageKey(storageKey), JSON.stringify(nextRequests));
+    window.localStorage.setItem(getUserStorageKey('atlas-withdrawal-last-action'), JSON.stringify({ type: 'bank-request', request: nextRequest }));
+
+    const channel = new BroadcastChannel('atlas-withdrawal-requests');
+    channel.postMessage({ type: 'requests-updated', requests: nextRequests });
+    channel.close();
+
+    // Balance deduction is performed server-side by admin on approval.
+    router.push(`/dashboard/withdrawal/fee?requestId=${nextRequest.id}`);
+  };
+
+  const balanceLabel = useMemo(() => formatCurrency(balance), [balance]);
+
+  return (
+    <DashboardShell title="Bank Withdrawal" subtitle="Enter your bank account details for withdrawal review.">
+      <div className="mx-auto max-w-3xl rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
+        <div className="rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--primary-gold)]/10 px-5 py-4">
+          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Bank transfer</p>
+          <h2 className="mt-2 text-2xl font-semibold text-[var(--text-white)]">Provide account details</h2>
+          <p className="mt-3 text-sm text-slate-300">Bank withdrawals require a minimum amount of $750.00 and may be subject to international transfer charges before release.</p>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--surface)]/10 p-4 text-sm text-slate-300">
+          Available balance: <span className="font-semibold text-[var(--text-white)]">{balanceLabel}</span>
+        </div>
+
+        <div className="mt-6 space-y-5">
+          <div>
+            <label className="mb-2 block text-sm text-slate-300">Withdrawal amount</label>
+            <input
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-[var(--text-white)] outline-none"
+              placeholder="Enter amount"
+              inputMode="decimal"
+            />
+            <p className="mt-2 text-sm text-slate-400">Minimum bank withdrawal: $750.00</p>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm text-slate-300">Bank name</label>
+            <input
+              value={bankName}
+              onChange={(event) => setBankName(event.target.value)}
+              className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-[var(--text-white)] outline-none"
+              placeholder="Enter bank name"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm text-slate-300">Account holder name</label>
+            <input
+              value={accountName}
+              onChange={(event) => setAccountName(event.target.value)}
+              className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-[var(--text-white)] outline-none"
+              placeholder="Enter account holder name"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm text-slate-300">Account number</label>
+            <input
+              value={accountNumber}
+              onChange={(event) => setAccountNumber(event.target.value)}
+              className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-[var(--text-white)] outline-none"
+              placeholder="Enter account number"
+            />
+          </div>
+
+          {message ? (
+            <div className={`rounded-2xl border px-4 py-3 text-sm ${insufficientBalance ? 'border-rose-400/40 bg-rose-500/10 text-rose-200' : 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200'}`}>
+              {message}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className="rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Submit bank withdrawal request
+            </button>
+            <Link href="/dashboard/withdrawal" className="rounded-2xl border border-[color:var(--primary-gold)]/20 px-4 py-3 text-sm text-slate-300 transition hover:bg-[color:var(--surface)]/40">
+              Back
+            </Link>
+          </div>
+        </div>
+      </div>
+    </DashboardShell>
+  );
+}
