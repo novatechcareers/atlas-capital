@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from './theme-toggle';
-import { subscribeToBalance } from '@/lib/balance';
+import { subscribeToBalance, syncBalanceFromServer } from '@/lib/balance';
 import { clearSession, getSession, type AuthSession } from '@/lib/auth';
 import { formatLocalizedCurrency, translatePageText } from '@/lib/i18n';
 import { LanguageSelector } from './language-selector';
@@ -46,8 +46,16 @@ export function DashboardShell({
       router.replace('/login');
       return;
     }
+
     setSession(currentSession);
+
     const unsubscribe = subscribeToBalance(setBalance);
+    void syncBalanceFromServer(currentSession.id).then((nextBalance) => {
+      if (typeof nextBalance === 'number' && Number.isFinite(nextBalance)) {
+        setBalance(nextBalance);
+      }
+    });
+
     return () => {
       unsubscribe();
     };

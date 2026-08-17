@@ -152,11 +152,38 @@ export function getScopedStorageKey(baseKey: string, userId = getSelectedAdminUs
   return `${baseKey}-${userId ?? 'guest'}`;
 }
 
+export function clearStaleLocalUserState(currentUserId: string) {
+  if (typeof window === 'undefined') return;
+
+  const prefixes = [
+    'atlas-balance-',
+    'atlas-subscriptions-',
+    'atlas-verify-',
+    'atlas-withdrawal-requests-',
+    'atlas-withdrawal-fee-',
+    'atlas-auto-trade-',
+    'atlas-live-trade-',
+    'atlas-profile-',
+    'atlas-profile-lock-',
+    'atlas-admin-funding-history-',
+  ];
+
+  const keys = Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index)).filter(Boolean) as string[];
+  for (const key of keys) {
+    const matchesPrefix = prefixes.some((prefix) => key.startsWith(prefix));
+    const stillCurrent = key.endsWith(`-${currentUserId}`) || key === `${currentUserId}`;
+    if (matchesPrefix && !stillCurrent) {
+      window.localStorage.removeItem(key);
+    }
+  }
+}
+
 export function setSession(session: AuthSession) {
   if (typeof window === 'undefined') {
     return session;
   }
 
+  clearStaleLocalUserState(session.id);
   window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
   return session;
 }

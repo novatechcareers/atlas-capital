@@ -11,6 +11,19 @@ type LanguageContextValue = {
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
+function applyGoogleTranslate(language: Language) {
+  const target = language === 'pt-BR' ? 'pt' : 'en';
+  const value = `/en/${target}`;
+
+  document.cookie = `googtrans=${encodeURIComponent(value)}; path=/; SameSite=Lax`;
+  document.cookie = `googtrans=${encodeURIComponent(value)}; path=/; domain=${window.location.hostname}; SameSite=Lax`;
+
+  const script = document.querySelector('script[src*="translate_a/element.js"]');
+  if (script && 'google' in window && window.google?.translate?.TranslateElement) {
+    window.location.reload();
+  }
+}
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>('en');
 
@@ -20,6 +33,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => {
       setLanguageState(storedLanguage);
       document.documentElement.lang = storedLanguage === 'pt-BR' ? 'pt-BR' : 'en';
+      const googleCookie = document.cookie.includes('googtrans=');
+      if (googleCookie && storedLanguage === 'pt-BR') {
+        document.cookie = 'googtrans=/en/pt; path=/; SameSite=Lax';
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -29,7 +46,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     setLanguage: (nextLanguage) => {
       setLanguageState(nextLanguage);
       setStoredLanguage(nextLanguage);
-      document.cookie = `googtrans=/en/${nextLanguage === 'pt-BR' ? 'pt' : 'en'}; path=/`;
+      applyGoogleTranslate(nextLanguage);
       window.location.reload();
     },
     t: (key) => translate(language, key),
