@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { DashboardShell } from '@/components/dashboard-shell';
 import { getUserStorageKey, getCurrentAccountId } from '@/lib/auth';
-import { canAfford, formatCurrency, getStoredBalance, setStoredBalance, subscribeToBalance } from '@/lib/balance';
+import { canAfford, formatCurrency, getStoredBalance, subscribeToBalance } from '@/lib/balance';
 
 const coinOptions = [
   { value: 'bitcoin', label: 'Bitcoin', placeholder: 'Enter BTC wallet address' },
@@ -130,11 +130,9 @@ export default function WithdrawalPage() {
         const payload = await resp.json();
         const withdrawal = payload?.withdrawal;
         if (withdrawal) {
-          // update local UI and balance
           const nextRequests = [withdrawal, ...requests];
           setRequests(nextRequests);
           try { window.localStorage.setItem(getUserStorageKey('atlas-withdrawal-requests'), JSON.stringify(nextRequests)); } catch {}
-          setStoredBalance(balance - requestedAmount);
           const channel = new BroadcastChannel('atlas-withdrawal-requests');
           channel.postMessage({ type: 'requests-updated', requests: nextRequests, userId });
           channel.close();
@@ -156,7 +154,6 @@ export default function WithdrawalPage() {
       const nextRequests = [nextRequest, ...requests];
       setRequests(nextRequests);
       window.localStorage.setItem(getUserStorageKey('atlas-withdrawal-requests'), JSON.stringify(nextRequests));
-      setStoredBalance(balance - requestedAmount);
       router.push(`/dashboard/withdrawal/fee?requestId=${nextRequest.id}`);
     })();
   };

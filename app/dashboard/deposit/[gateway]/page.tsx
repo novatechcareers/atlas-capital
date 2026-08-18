@@ -89,6 +89,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
   const [expiryLeft, setExpiryLeft] = useState<string | null>(null);
   const [depositSubmitted, setDepositSubmitted] = useState(false);
   const [depositStatus, setDepositStatus] = useState<'Pending' | 'Confirmed' | 'Approved' | null>(null);
+  const [depositHistory, setDepositHistory] = useState<Array<{ id: string; amount: number; currency: string; gateway: string; status: string; note: string | null; created_at: string }>>([]);
   const resolvedParams = use(params);
   const gateway = resolvedParams.gateway;
   const amount = searchParams.get('amount') ?? '';
@@ -99,9 +100,10 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
 
   useEffect(() => {
     const userId = getCurrentAccountId();
-    if (!userId || !amount || !gateway) {
+    if (!userId || !gateway) {
       setDepositSubmitted(false);
       setDepositStatus(null);
+      setDepositHistory([]);
       return;
     }
 
@@ -115,13 +117,18 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
         }
 
         const entries = Array.isArray(result?.deposits) ? result.deposits : [];
+        setDepositHistory(entries);
+
         const match = entries.find(
-          (entry: any) => String(entry.amount) === String(Number(amount)) && String(entry.gateway) === String(gateway),
+          (entry: any) => String(entry.amount) === String(Number(amount || 0)) && String(entry.gateway) === String(gateway),
         );
 
         if (match) {
           setDepositSubmitted(true);
           setDepositStatus(match.status ?? 'Pending');
+        } else if (amount) {
+          setDepositSubmitted(false);
+          setDepositStatus(null);
         } else {
           setDepositSubmitted(false);
           setDepositStatus(null);
@@ -129,10 +136,32 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
       } catch {
         setDepositSubmitted(false);
         setDepositStatus(null);
+        setDepositHistory([]);
       }
     }
 
     void syncDepositStatus();
+
+    let realtimeChannel: any = null;
+    try {
+      const supabase = getSupabase();
+      if (supabase) {
+        realtimeChannel = supabase
+          .channel(`deposit-history-${userId}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'deposit_requests', filter: `user_id=eq.${userId}` }, () => {
+            void syncDepositStatus();
+          })
+          .subscribe();
+      }
+    } catch {
+      // realtime is optional here; the fetch refresh is enough as a fallback
+    }
+
+    return () => {
+      try {
+        if (realtimeChannel && typeof realtimeChannel.unsubscribe === 'function') realtimeChannel.unsubscribe();
+      } catch {}
+    };
   }, [amount, gateway]);
 
   useEffect(() => {
@@ -349,6 +378,44 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
         <div className="rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--primary-gold)]/10 px-5 py-4">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{tr('Gateway ready')}</p>
           <h2 className="mt-2 text-2xl font-semibold text-[var(--text-white)]">{config?.title || 'Unknown gateway'}</h2>
+        </div>
+
+        <div className="mt-6 rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--surface)]/5 p-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-[var(--text-white)]">Recent deposit history</h3>
+            <span className="text-xs uppercase tracking-[0.25em] text-[color:var(--primary-gold)]">DB synced</span>
+          </div>
+
+          {depositHistory.length ? (
+            <div className="overflow-hidden rounded-2xl border border-[color:var(--primary-gold)]/20">
+              <table className="min-w-full divide-y divide-[color:var(--primary-gold)]/20">
+                <thead className="bg-[color:var(--primary-gold)]/10">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.2em] text-slate-300">Gateway</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.2em] text-slate-300">Amount</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.2em] text-slate-300">Status</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.2em] text-slate-300">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[color:var(--primary-gold)]/10 bg-[color:var(--bg-dark-navy)]/70">
+                  {depositHistory.map((entry) => (
+                    <tr key={entry.id}>
+                      <td className="px-4 py-3 text-sm text-[var(--text-white)] capitalize">{entry.gateway}</td>
+                      <td className="px-4 py-3 text-sm text-[var(--text-white)]">{formatCurrency(entry.currency, String(entry.amount))}</td>
+                      <td className="px-4 py-3 text-sm text-[var(--text-white)]">
+                        <span className="rounded-full border border-[color:var(--primary-gold)]/30 bg-[color:var(--primary-gold)]/10 px-2 py-1 text-[10px] uppercase tracking-[0.22em] text-[color:var(--primary-gold)]">{entry.status}</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-400">{new Date(entry.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-[color:var(--primary-gold)]/30 bg-[color:var(--bg-dark-navy)]/80 px-4 py-5 text-sm text-slate-400">
+              No deposit requests have been created yet for this account.
+            </div>
+          )}
         </div>
 
         <div className="mt-6 rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)]/70 p-5">

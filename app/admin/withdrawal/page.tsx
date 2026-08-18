@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AdminShell } from '@/components/admin-shell';
 import { getScopedStorageKey, getSelectedAdminUser, getSelectedAdminUserId } from '@/lib/auth';
-import { addToBalance, formatCurrency } from '@/lib/balance';
+import { formatCurrency } from '@/lib/balance';
 
 export default function AdminWithdrawalPage() {
   const [requests, setRequests] = useState<Array<{ id: number; amount: number; method: string; status: 'Fee pending' | 'Pending' | 'Approved' | 'Declined'; walletAddress?: string }>>([]);
@@ -70,10 +70,6 @@ export default function AdminWithdrawalPage() {
             const channel = new BroadcastChannel('atlas-withdrawal-requests');
             channel.postMessage({ type: 'requests-updated', requests: nextRequests, userId: selectedUserId });
             channel.close();
-
-            if (decision === 'Declined') {
-              addToBalance(Number(updated.amount), selectedUserId);
-            }
             return;
           }
         }
@@ -93,12 +89,6 @@ export default function AdminWithdrawalPage() {
       const channel = new BroadcastChannel('atlas-withdrawal-requests');
       channel.postMessage({ type: 'requests-updated', requests: nextRequests, userId: selectedUserId });
       channel.close();
-
-      if (decision === 'Declined') {
-        if (requestToUpdate) {
-          addToBalance(requestToUpdate.amount, selectedUserId);
-        }
-      }
     })();
   };
 
