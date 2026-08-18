@@ -98,9 +98,53 @@ export default function AutoTradePage() {
       updatedAt: now,
     };
 
+    // Save locally for immediate UI feedback
     saveAutoTradePurchase(nextPurchase);
-    const latest = await syncAutoTradeFromServer();
-    setPurchase(latest ?? nextPurchase);
+    setPurchase(nextPurchase);
+
+    // Send to database and wait for it to complete
+    try {
+      const userId = await new Promise<string | null>((resolve) => {
+        // Get current user ID from session storage
+        if (typeof window !== 'undefined') {
+          const session = window.sessionStorage?.getItem('atlas-session');
+          if (session) {
+            try {
+              resolve(JSON.parse(session)?.id || null);
+            } catch {
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+
+      if (userId) {
+        const response = await fetch('/api/auto-trade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            planName: selectedPlan.name,
+            price: selectedPlan.price,
+            status: 'Reviewing',
+          }),
+        });
+
+        if (response.ok) {
+          // Sync from server to get the canonical database record
+          const latest = await syncAutoTradeFromServer();
+          setPurchase(latest ?? nextPurchase);
+        }
+      }
+    } catch (err) {
+      // If server call fails, at least we have it in localStorage
+      console.error('Failed to sync auto-trade to database:', err);
+    }
+
     await syncBalanceFromServer();
     setSelectedPlan(null);
     setMessage(tr('Payment received and is under review. Your bot will start after admin confirmation.'));

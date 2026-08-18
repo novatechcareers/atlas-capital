@@ -20,6 +20,7 @@ export default function AdminAutoTradePage() {
   const [purchase, setPurchase] = useState<AutoTradePurchase | null>(null);
   const [message, setMessage] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSelectedUserId(getSelectedAdminUserId()), 0);
@@ -32,15 +33,70 @@ export default function AdminAutoTradePage() {
       return () => window.clearTimeout(timer);
     }
 
+    // Fetch from server first to ensure we see data from the database, not stale localStorage
+    const syncAndSubscribe = async () => {
+      try {
+        const response = await fetch(`/api/auto-trade?userId=${encodeURIComponent(selectedUserId)}`);
+        if (response.ok) {
+          const { purchase: serverPurchase } = await response.json();
+          if (serverPurchase) {
+            setPurchase({
+              id: serverPurchase.id,
+              planName: serverPurchase.planName,
+              price: Number(serverPurchase.price),
+              status: serverPurchase.status,
+              createdAt: serverPurchase.createdAt,
+              updatedAt: serverPurchase.updatedAt,
+              activatedAt: serverPurchase.activatedAt,
+            });
+          } else {
+            setPurchase(null);
+          }
+        }
+      } catch (err) {
+        // Fall back to localStorage if server fetch fails
+        setPurchase(null);
+      }
+    };
+
+    void syncAndSubscribe();
     return subscribeToAutoTrade(setPurchase, selectedUserId);
   }, [selectedUserId]);
 
-  const changeStatus = (status: AutoTradePurchase['status'], text: string) => {
-    if (!selectedUserId) return;
-    const updated = updateAutoTradeStatus(status, selectedUserId);
-    if (!updated) return;
-    setPurchase(updated);
-    setMessage(text);
+  const changeStatus = async (status: AutoTradePurchase['status'], text: string) => {
+    if (!selectedUserId || !purchase) return;
+    if (isUpdating) return;
+
+    setIsUpdating(true);
+    try {
+      // Update in database
+      const response = await fetch(`/api/admin/auto-trade/${purchase.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+
+      if (response.ok) {
+        const { purchase: updated } = await response.json();
+        setPurchase({
+          id: updated.id,
+          planName: updated.planName,
+          price: Number(updated.price),
+          status: updated.status,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+          activatedAt: updated.activatedAt,
+        });
+        setMessage(text);
+      } else {
+        setMessage('Failed to update auto-trade status.');
+      }
+    } catch (err) {
+      console.error('Failed to update auto-trade status:', err);
+      setMessage('Error updating auto-trade status.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleReset = () => {
@@ -81,17 +137,17 @@ export default function AdminAutoTradePage() {
               </div>
 
               {purchase.status === 'Reviewing' ? (
-                <button type="button" onClick={() => changeStatus('Unlocked', tr('Payment confirmed. Auto-trade controls are now unlocked.'))} className="mt-6 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90">
-                  {tr('Payment received and confirmed')}
+                <button type="button" disabled={isUpdating} onClick={() => changeStatus('Unlocked', tr('Payment confirmed. Auto-trade controls are now unlocked.'))} className="mt-6 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+                  {isUpdating ? `${tr('Payment received and confirmed')}...` : tr('Payment received and confirmed')}
                 </button>
               ) : (
                 <div className="mt-6 border-t border-[color:var(--border-soft)] pt-6">
                   <p className="text-sm font-semibold text-[var(--text-white)]">{tr('Bot controls')}</p>
                   <p className="mt-2 text-sm text-slate-400">{tr('These controls are available after payment confirmation.')}</p>
                   <div className="mt-4 flex flex-wrap gap-3">
-                    <button type="button" disabled={purchase.status === 'Running'} onClick={() => changeStatus('Running', tr('Auto-trade bot started.'))} className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">{tr('Start bot')}</button>
-                    <button type="button" disabled={purchase.status !== 'Running'} onClick={() => changeStatus('Stopped', tr('Auto-trade bot stopped.'))} className="rounded-2xl bg-rose-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">{tr('Stop bot')}</button>
-                    <button type="button" onClick={handleReset} className="rounded-2xl border border-amber-400/40 px-5 py-3 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10">{tr('Reset bot and restore payment')}</button>
+                    <button type="button" disabled={purchase.status === 'Running' || isUpdating} onClick={() => changeStatus('Running', tr('Auto-trade bot started.'))} className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">{isUpdating ? `${tr('Start bot')}...` : tr('Start bot')}</button>
+                    <button type="button" disabled={purchase.status !== 'Running' || isUpdating} onClick={() => changeStatus('Stopped', tr('Auto-trade bot stopped.'))} className="rounded-2xl bg-rose-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">{isUpdating ? `${tr('Stop bot')}...` : tr('Stop bot')}</button>
+                    <button type="button" disabled={isUpdating} onClick={handleReset} className="rounded-2xl border border-amber-400/40 px-5 py-3 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10">{isUpdating ? `${tr('Reset bot and restore payment')}...` : tr('Reset bot and restore payment')}</button>
                   </div>
                 </div>
               )}
