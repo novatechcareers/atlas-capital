@@ -97,29 +97,39 @@ export default function AdminVerifyAccountPage() {
     );
   };
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     if (!request || !selectedUser) return;
 
-    updateVerification({
+    const updatedRequest = await updateVerification({
       status: 'Approved',
       reason: undefined,
       reviewedAt: Date.now(),
     }, selectedUser.id);
+    if (!updatedRequest) {
+      setMessage({ type: 'error', text: 'Unable to approve verification. Please try again.' });
+      return;
+    }
+    setRequest(updatedRequest);
     setMessage({ type: 'success', text: 'Verification approved successfully.' });
   };
 
-  const handleDecline = () => {
+  const handleDecline = async () => {
     if (!request || !selectedUser) return;
     if (!reason.trim()) {
       setMessage({ type: 'error', text: 'Please provide a reason for declining the document.' });
       return;
     }
 
-    updateVerification({
+    const updatedRequest = await updateVerification({
       status: 'Declined',
       reason: reason.trim(),
       reviewedAt: Date.now(),
     }, selectedUser.id);
+    if (!updatedRequest) {
+      setMessage({ type: 'error', text: 'Unable to decline verification. Please try again.' });
+      return;
+    }
+    setRequest(updatedRequest);
     setMessage({ type: 'success', text: 'Verification declined and reason recorded.' });
   };
 

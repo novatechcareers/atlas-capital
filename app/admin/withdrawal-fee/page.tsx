@@ -6,7 +6,7 @@ import { AdminShell } from '@/components/admin-shell';
 import { getAccountById, getScopedStorageKey, getSelectedAdminUserId } from '@/lib/auth';
 
 type FeeMeta = {
-  requestId: number;
+  requestId: string | number;
   amount: number;
   createdAt: number;
 };
@@ -61,10 +61,31 @@ export default function AdminWithdrawalFeePage() {
     const scopedConfirmedKey = getScopedStorageKey(confirmedKey, selectedUserId);
 
     const fetchAccount = async () => {
-      setRequested(window.localStorage.getItem(scopedRequestKey) === 'true');
-      setFeePaymentSent(Boolean(window.localStorage.getItem(scopedSentKey)));
+      let serverStateLoaded = false;
+      try {
+        const response = await fetch(`/api/admin/withdrawals?userId=${encodeURIComponent(selectedUserId!)}`);
+        if (response.ok) {
+          const payload = await response.json();
+          const withdrawals = Array.isArray(payload?.withdrawals) ? payload.withdrawals : [];
+          const feeRequest = withdrawals.find((withdrawal: any) => String(withdrawal.note ?? '').includes('Fee account requested by user'));
+          const feePayment = withdrawals.find((withdrawal: any) => String(withdrawal.note ?? '').includes('Fee payment reported by user'));
+          setRequested(Boolean(feeRequest));
+          setFeePaymentSent(Boolean(feePayment));
+          if (feeRequest) {
+            setMeta({ requestId: feeRequest.id, amount: 200, createdAt: new Date(feeRequest.created_at ?? Date.now()).getTime() });
+          }
+          serverStateLoaded = true;
+        }
+      } catch {
+        // fall back to local state when the database is unavailable
+      }
+
+      if (!serverStateLoaded) {
+        setRequested(window.localStorage.getItem(scopedRequestKey) === 'true');
+        setFeePaymentSent(Boolean(window.localStorage.getItem(scopedSentKey)));
+      }
       const storedMeta = window.localStorage.getItem(scopedMetaKey);
-      if (storedMeta) {
+      if (storedMeta && !serverStateLoaded) {
         try {
           setMeta(JSON.parse(storedMeta) as FeeMeta);
         } catch {

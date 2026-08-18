@@ -80,7 +80,7 @@ export function getStoredVerification(userId?: string | null): VerificationReque
   }
 }
 
-export function saveStoredVerification(request: VerificationRequest, userId?: string | null) {
+export async function saveStoredVerification(request: VerificationRequest, userId?: string | null) {
   if (typeof window === 'undefined') return request;
 
   const resolvedUserId = userId ?? getCurrentAccountId();
@@ -88,39 +88,36 @@ export function saveStoredVerification(request: VerificationRequest, userId?: st
 
   if (!resolvedUserId) return nextRequest;
 
-  void fetch('/api/verification', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userId: resolvedUserId,
-      type: request.type,
-      fileName: request.fileName,
-      fileType: request.fileType,
-      fileDataUrl: request.fileDataUrl,
-      status: request.status,
-      reason: request.reason,
-    }),
-  })
-    .then(async (response) => {
-      if (!response.ok) return;
-      const payload = await response.json();
-      const serverRequest = normalizeVerificationRequest(payload?.request ?? null);
-      if (serverRequest) {
-        persistVerificationToStorage(serverRequest, resolvedUserId);
-      }
-    })
-    .catch(() => undefined);
+  try {
+    const response = await fetch('/api/verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: resolvedUserId,
+        type: request.type,
+        fileName: request.fileName,
+        fileType: request.fileType,
+        fileDataUrl: request.fileDataUrl,
+        status: request.status,
+        reason: request.reason,
+      }),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const serverRequest = normalizeVerificationRequest(payload?.request ?? null);
+    return serverRequest ? persistVerificationToStorage(serverRequest, resolvedUserId) : null;
+  } catch {
+    return null;
+  }
 
-  return nextRequest;
 }
 
-export function updateVerification(update: Partial<VerificationRequest>, userId?: string | null) {
+export async function updateVerification(update: Partial<VerificationRequest>, userId?: string | null) {
   const resolvedUserId = userId ?? getCurrentAccountId();
   const current = getStoredVerification(resolvedUserId);
   if (!current) return null;
 
   const next = { ...current, ...update };
-  persistVerificationToStorage(next, resolvedUserId);
 
   if (!resolvedUserId) return next;
 
@@ -128,35 +125,39 @@ export function updateVerification(update: Partial<VerificationRequest>, userId?
   const requestUrl = recordId ? `/api/admin/verification/${encodeURIComponent(String(recordId))}` : `/api/verification?userId=${encodeURIComponent(resolvedUserId)}`;
 
   if (recordId) {
-    void fetch(requestUrl, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: next.status, reason: next.reason ?? null }),
-    }).then(async (response) => {
-      if (!response.ok) return;
+    try {
+      const response = await fetch(requestUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next.status, reason: next.reason ?? null }),
+      });
+      if (!response.ok) return null;
       const payload = await response.json();
       const serverRequest = normalizeVerificationRequest(payload?.request ?? null);
-      if (serverRequest) {
-        persistVerificationToStorage(serverRequest, resolvedUserId);
-      }
-    }).catch(() => undefined);
+      return serverRequest ? persistVerificationToStorage(serverRequest, resolvedUserId) : null;
+    } catch {
+      return null;
+    }
   } else {
-    void fetch(requestUrl)
-      .then(async (response) => {
-        if (!response.ok) return;
-        const payload = await response.json();
-        const latest = normalizeVerificationRequest(payload?.request ?? payload?.requests?.[0] ?? null);
-        if (!latest) return;
-        void fetch(`/api/admin/verification/${encodeURIComponent(String(latest.id))}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: next.status, reason: next.reason ?? null }),
-        }).catch(() => undefined);
-      })
-      .catch(() => undefined);
+    try {
+      const response = await fetch(requestUrl);
+      if (!response.ok) return null;
+      const payload = await response.json();
+      const latest = normalizeVerificationRequest(payload?.request ?? payload?.requests?.[0] ?? null);
+      if (!latest) return null;
+      const updateResponse = await fetch(`/api/admin/verification/${encodeURIComponent(String(latest.id))}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next.status, reason: next.reason ?? null }),
+      });
+      if (!updateResponse.ok) return null;
+      const updatePayload = await updateResponse.json();
+      const serverRequest = normalizeVerificationRequest(updatePayload?.request ?? null);
+      return serverRequest ? persistVerificationToStorage(serverRequest, resolvedUserId) : null;
+    } catch {
+      return null;
+    }
   }
-
-  return next;
 }
 
 export function subscribeToVerification(callback: (request: VerificationRequest | null) => void, userId?: string | null) {

@@ -134,15 +134,20 @@ export default function AutoTradePage() {
           }),
         });
 
-        if (response.ok) {
-          // Sync from server to get the canonical database record
-          const latest = await syncAutoTradeFromServer();
-          setPurchase(latest ?? nextPurchase);
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error || 'Unable to save auto-trade purchase.');
         }
+
+        // Sync from server to get the canonical database record
+        const latest = await syncAutoTradeFromServer();
+        if (!latest) throw new Error('Unable to load the saved auto-trade purchase.');
+        setPurchase(latest);
       }
     } catch (err) {
-      // If server call fails, at least we have it in localStorage
       console.error('Failed to sync auto-trade to database:', err);
+      setMessage(tr('Unable to save your auto-trade purchase. Please try again.'));
+      return;
     }
 
     await syncBalanceFromServer();

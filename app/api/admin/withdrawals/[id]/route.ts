@@ -45,7 +45,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       // Use DB RPC function for atomic approve-and-deduct operation
       try {
         const adminName = (body?.adminName as string) ?? 'admin';
-        const { data: rpcData, error: rpcErr } = await supabase.rpc('approve_withdrawal_and_deduct', { p_withdrawal_id: Number(id), p_acting_admin: adminName });
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('approve_withdrawal_and_deduct', { p_withdrawal_id: id, p_acting_admin: adminName });
         if (rpcErr) {
           // If the RPC raised an exception (e.g., insufficient funds), surface it
           return NextResponse.json({ error: rpcErr.message || rpcErr }, { status: 400 });

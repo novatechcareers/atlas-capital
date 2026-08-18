@@ -3,7 +3,7 @@ import { getCurrentAccountId, getUserStorageKey } from './auth.ts';
 export type AutoTradeStatus = 'Reviewing' | 'Unlocked' | 'Running' | 'Stopped' | 'Rejected';
 
 export type AutoTradePurchase = {
-  id: number;
+  id: string | number;
   planName: string;
   price: number;
   status: AutoTradeStatus;
@@ -76,20 +76,6 @@ export function saveAutoTradePurchase(purchase: AutoTradePurchase, userId?: stri
   const channel = new BroadcastChannel(AUTO_TRADE_CHANNEL);
   channel.postMessage({ type: 'auto-trade-updated', purchase, userId: resolvedUserId });
   channel.close();
-
-  if (resolvedUserId) {
-    void fetch('/api/auto-trade', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: resolvedUserId,
-        planName: purchase.planName,
-        price: purchase.price,
-        status: purchase.status,
-        activatedAt: purchase.activatedAt,
-      }),
-    }).catch(() => undefined);
-  }
 
   return purchase;
 }

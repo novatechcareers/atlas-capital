@@ -2,12 +2,13 @@
 
 BEGIN;
 
--- Create function if not exists
-CREATE OR REPLACE FUNCTION public.approve_withdrawal_and_deduct(p_withdrawal_id bigint, p_acting_admin text)
+DROP FUNCTION IF EXISTS public.approve_withdrawal_and_deduct(bigint, text);
+
+CREATE OR REPLACE FUNCTION public.approve_withdrawal_and_deduct(p_withdrawal_id uuid, p_acting_admin text)
 RETURNS TABLE(
-  withdrawal_id bigint,
+  withdrawal_id uuid,
   withdrawal_status text,
-  user_id text,
+  user_id uuid,
   deducted_balance numeric,
   remaining_balance numeric
 ) AS $$
@@ -17,7 +18,11 @@ DECLARE
   new_balance numeric;
 BEGIN
   -- Lock the withdrawal row to avoid concurrent approvals
-  SELECT * INTO wr FROM public.withdrawal_requests WHERE id = p_withdrawal_id FOR UPDATE;
+  SELECT * INTO wr
+  FROM public.withdrawal_requests
+  WHERE id = p_withdrawal_id
+  FOR UPDATE;
+
   IF NOT FOUND THEN
     RAISE EXCEPTION 'withdrawal request % not found', p_withdrawal_id;
   END IF;

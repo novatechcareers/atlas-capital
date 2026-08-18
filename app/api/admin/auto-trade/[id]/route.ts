@@ -34,7 +34,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { data, error } = await supabase
       .from('auto_trade_purchases')
       .update(updateData)
-      .eq('id', Number(id))
+      .eq('id', id)
       .select('*')
       .single();
 

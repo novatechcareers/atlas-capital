@@ -70,9 +70,13 @@ export default function VerifyAccountPage() {
       uploadedAt: Date.now(),
     };
 
-    saveStoredVerification(request);
-    setRequest(request);
-    await syncVerificationFromServer();
+    const savedRequest = await saveStoredVerification(request);
+    if (!savedRequest) {
+      setMessage({ type: 'error', text: 'Unable to upload your document. Please try again.' });
+      return;
+    }
+
+    setRequest(savedRequest);
     setMessage({ type: 'success', text: 'Document uploaded successfully. Admin will review your verification shortly.' });
   };
 

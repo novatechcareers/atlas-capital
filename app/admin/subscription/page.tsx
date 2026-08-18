@@ -39,6 +39,7 @@ export default function AdminSubscriptionPage() {
               price: Number(reviewing.price),
               status: reviewing.status,
               createdAt: reviewing.created_at ? new Date(reviewing.created_at).getTime() : Date.now(),
+              updatedAt: reviewing.updated_at ? new Date(reviewing.updated_at).getTime() : Date.now(),
             });
           } else {
             setSubscription(null);
@@ -78,6 +79,7 @@ export default function AdminSubscriptionPage() {
         price: Number(updated.price),
         status: updated.status,
         createdAt: updated.created_at ? new Date(updated.created_at).getTime() : Date.now(),
+        updatedAt: updated.updated_at ? new Date(updated.updated_at).getTime() : Date.now(),
       });
       setMessage('Subscription payment approved. Premium access is now active for the selected user.');
     } catch (err) {

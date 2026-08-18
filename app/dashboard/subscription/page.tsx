@@ -106,6 +106,8 @@ export default function SubscriptionPage() {
       name: plan.name,
       price: plan.price,
       status: 'Reviewing' as const,
+      createdAt: now,
+      updatedAt: now,
     };
 
     // Save locally for immediate UI feedback

@@ -130,9 +130,30 @@ function WithdrawalFeeContent() {
     };
   }, [requestId, router]);
 
-  const handleGenerateAccount = () => {
+  const handleGenerateAccount = async () => {
     if (!request) {
       setMessage('This withdrawal request could not be located. Return to the withdrawal page and submit again.');
+      return;
+    }
+
+    const userId = getCurrentAccountId();
+    if (!userId) {
+      setMessage('Unable to identify your account. Please sign in again.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/withdrawals/${encodeURIComponent(String(request.id))}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Fee pending', note: 'Fee account requested by user' }),
+      });
+      if (!response.ok) {
+        setMessage('Unable to request the payment account. Please try again.');
+        return;
+      }
+    } catch {
+      setMessage('Unable to request the payment account. Please try again.');
       return;
     }
 
@@ -153,7 +174,7 @@ function WithdrawalFeeContent() {
         const resp = await fetch(`/api/admin/withdrawals/${encodeURIComponent(String(request.id))}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'Pending' }),
+          body: JSON.stringify({ status: 'Pending', note: 'Fee account requested by user; Fee payment reported by user' }),
         });
         if (resp.ok) {
           const payload = await resp.json();
