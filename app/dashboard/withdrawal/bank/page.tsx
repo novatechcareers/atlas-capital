@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { DashboardShell } from '@/components/dashboard-shell';
-import { getUserStorageKey } from '@/lib/auth';
+import { getCurrentAccountId, getUserStorageKey } from '@/lib/auth';
 import { canAfford, formatCurrency, getStoredBalance, subscribeToBalance } from '@/lib/balance';
 
 type WithdrawalRequest = {
@@ -40,7 +40,7 @@ export default function BankWithdrawalPage() {
   const canSubmit = Boolean(amount && numericAmount >= 750 && bankName && accountName && accountNumber);
   const insufficientBalance = Boolean(amount && numericAmount > 0 && !canAfford(numericAmount));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return;
 
     if (belowMinimum) {
@@ -51,6 +51,55 @@ export default function BankWithdrawalPage() {
     if (!canAfford(numericAmount)) {
       setMessage('Insufficient balance. Deposit funds to top up before withdrawing.');
       return;
+    }
+
+    const userId = getCurrentAccountId();
+    if (!userId) {
+      setMessage('Unable to identify your account. Please sign in again.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/withdrawals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          amount: numericAmount,
+          currency: 'USD',
+          method: 'bank',
+          bankAccount: {
+            bankName,
+            accountName,
+            accountNumber,
+          },
+          status: 'Fee pending',
+          note: 'Bank withdrawal request submitted',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Unable to create bank withdrawal request');
+      }
+
+      const payload = await response.json();
+      const withdrawal = payload?.withdrawal ?? null;
+      if (withdrawal) {
+        const localRequests = window.localStorage.getItem(getUserStorageKey(storageKey));
+        const requests: WithdrawalRequest[] = localRequests ? JSON.parse(localRequests) : [];
+        const nextRequests = [withdrawal, ...requests];
+        window.localStorage.setItem(getUserStorageKey(storageKey), JSON.stringify(nextRequests));
+        window.localStorage.setItem(getUserStorageKey('atlas-withdrawal-last-action'), JSON.stringify({ type: 'bank-request', request: withdrawal }));
+
+        const channel = new BroadcastChannel('atlas-withdrawal-requests');
+        channel.postMessage({ type: 'requests-updated', requests: nextRequests, userId });
+        channel.close();
+
+        router.push(`/dashboard/withdrawal/fee?requestId=${encodeURIComponent(String(withdrawal.id))}`);
+        return;
+      }
+    } catch {
+      // Fallback to local storage only if the server is unavailable, but the server path above is authoritative when available.
     }
 
     const stored = window.localStorage.getItem(getUserStorageKey(storageKey));
@@ -70,10 +119,9 @@ export default function BankWithdrawalPage() {
     window.localStorage.setItem(getUserStorageKey('atlas-withdrawal-last-action'), JSON.stringify({ type: 'bank-request', request: nextRequest }));
 
     const channel = new BroadcastChannel('atlas-withdrawal-requests');
-    channel.postMessage({ type: 'requests-updated', requests: nextRequests });
+    channel.postMessage({ type: 'requests-updated', requests: nextRequests, userId });
     channel.close();
 
-    // Balance deduction is performed server-side by admin on approval.
     router.push(`/dashboard/withdrawal/fee?requestId=${nextRequest.id}`);
   };
 

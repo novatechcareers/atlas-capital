@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { DashboardShell } from '@/components/dashboard-shell';
 import { getUserStorageKey } from '@/lib/auth';
 import { canAfford, formatCurrency, getStoredBalance, subscribeToBalance, syncBalanceFromServer } from '@/lib/balance';
-import { getActiveSubscription, saveActiveSubscription, subscribeToSubscription, type ActiveSubscription } from '@/lib/subscription';
+import { getActiveSubscription, saveActiveSubscription, subscribeToSubscription, syncSubscriptionFromServer, type ActiveSubscription } from '@/lib/subscription';
 
 const tiers = [
   {
@@ -54,8 +54,13 @@ export default function SubscriptionPage() {
   }, []);
 
   useEffect(() => {
-    setActiveSubscription(getActiveSubscription());
-    return subscribeToSubscription(setActiveSubscription);
+    const syncLatest = async () => {
+      const latest = await syncSubscriptionFromServer();
+      setActiveSubscription(latest ?? getActiveSubscription());
+    };
+
+    void syncLatest();
+    return subscribeToSubscription((next) => setActiveSubscription(next ?? getActiveSubscription()));
   }, []);
 
   useEffect(() => {

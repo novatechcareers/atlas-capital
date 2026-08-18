@@ -10,6 +10,7 @@ import {
   type AutoTradeHistoryEntry,
   saveAutoTradePurchase,
   subscribeToAutoTrade,
+  syncAutoTradeFromServer,
 } from '@/lib/auto-trade';
 import { useLanguage } from '@/components/language-provider';
 import { translatePageText } from '@/lib/i18n';
@@ -51,8 +52,13 @@ export default function AutoTradePage() {
   }, []);
 
   useEffect(() => {
-    setPurchase(getAutoTradePurchase());
-    return subscribeToAutoTrade(setPurchase);
+    const syncLatest = async () => {
+      const latest = await syncAutoTradeFromServer();
+      setPurchase(latest ?? getAutoTradePurchase());
+    };
+
+    void syncLatest();
+    return subscribeToAutoTrade((next) => setPurchase(next ?? getAutoTradePurchase()));
   }, []);
 
   useEffect(() => {
@@ -75,7 +81,7 @@ export default function AutoTradePage() {
     }
   }, [purchase]);
 
-  const handlePurchase = () => {
+  const handlePurchase = async () => {
     if (!selectedPlan) return;
     if (!canAfford(selectedPlan.price)) {
       setMessage(tr('Insufficient balance. Please top up your account before purchasing an auto-trade plan.'));
@@ -92,10 +98,10 @@ export default function AutoTradePage() {
       updatedAt: now,
     };
 
-    // Do not mutate balance locally; server/admin will authoritatively apply payment.
     saveAutoTradePurchase(nextPurchase);
-    void syncBalanceFromServer();
-    setPurchase(nextPurchase);
+    const latest = await syncAutoTradeFromServer();
+    setPurchase(latest ?? nextPurchase);
+    await syncBalanceFromServer();
     setSelectedPlan(null);
     setMessage(tr('Payment received and is under review. Your bot will start after admin confirmation.'));
   };

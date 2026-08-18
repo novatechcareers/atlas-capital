@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DashboardShell } from '@/components/dashboard-shell';
-import { getStoredVerification, saveStoredVerification, subscribeToVerification, VerificationRequest } from '@/lib/verification';
+import { getStoredVerification, saveStoredVerification, subscribeToVerification, syncVerificationFromServer, VerificationRequest } from '@/lib/verification';
 
 const documentTypes = [
   { value: 'passport', label: 'Passport' },
@@ -20,7 +20,12 @@ export default function VerifyAccountPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    setRequest(getStoredVerification());
+    const loadRequest = async () => {
+      const latest = await syncVerificationFromServer();
+      setRequest(latest ?? getStoredVerification());
+    };
+
+    void loadRequest();
     const unsubscribe = subscribeToVerification(setRequest);
     return unsubscribe;
   }, []);
@@ -67,6 +72,7 @@ export default function VerifyAccountPage() {
 
     saveStoredVerification(request);
     setRequest(request);
+    await syncVerificationFromServer();
     setMessage({ type: 'success', text: 'Document uploaded successfully. Admin will review your verification shortly.' });
   };
 

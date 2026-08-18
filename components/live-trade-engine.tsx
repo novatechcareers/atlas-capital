@@ -41,7 +41,7 @@ export function LiveTradeEngine() {
           const executionFee = Math.round(position.amount * 0.0125 * 100) / 100;
           const slippage = Math.round(Math.abs(pnl) * Math.random() * 0.08 * 100) / 100;
           const realizedPnl = Math.round((pnl - executionFee - slippage) * 100) / 100;
-          addToBalance(position.amount + realizedPnl, userId);
+          addToBalance(realizedPnl, userId);
           addLiveTradeHistoryEntry({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             side: position.side,
