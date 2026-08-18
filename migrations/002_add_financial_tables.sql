@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.withdrawal_requests (
   amount numeric(12,2) NOT NULL CHECK (amount > 0),
   currency text NOT NULL DEFAULT 'USD',
   method text NOT NULL DEFAULT 'bank',
-  status text NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+  status text NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Declined', 'Rejected')),
   note text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()

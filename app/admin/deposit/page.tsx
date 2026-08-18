@@ -107,6 +107,7 @@ export default function AdminDepositPage() {
         }
 
         const account = accountResult?.bankAccount ?? null;
+        const hasAssignedAccount = Boolean(account);
         setBankName(account?.bank_name ?? '');
         setAccountName(account?.account_name ?? '');
         setAccountNumber(account?.account_number ?? '');
@@ -117,9 +118,11 @@ export default function AdminDepositPage() {
           throw new Error(requestResult?.error || 'Unable to load deposit request state.');
         }
 
-        const pendingRequest = (Array.isArray(requestResult?.deposits) ? requestResult.deposits : []).find(
-          (entry: any) => entry.gateway === 'bank' && entry.currency === currency && (entry.status === 'Pending' || entry.status === 'Confirmed'),
-        );
+        const pendingRequest = hasAssignedAccount
+          ? null
+          : (Array.isArray(requestResult?.deposits) ? requestResult.deposits : []).find(
+              (entry: any) => entry.gateway === 'bank' && entry.currency === currency && (entry.status === 'Pending' || entry.status === 'Confirmed'),
+            );
 
         setRequestPending(Boolean(pendingRequest));
         setRequestMeta(

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS public.withdrawal_requests (
   method text NOT NULL DEFAULT 'bank',
   wallet_address text,
   bank_account text,
-  status text NOT NULL DEFAULT 'Pending' CHECK (status IN ('Fee pending', 'Pending', 'Approved', 'Declined')),
+  status text NOT NULL DEFAULT 'Pending' CHECK (status IN ('Fee pending', 'Pending', 'Approved', 'Declined', 'Rejected')),
   note text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()

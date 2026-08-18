@@ -130,36 +130,66 @@ export function AdminShell({ title, subtitle, children }: { title: string; subti
     const onVisibility = () => { if (document.visibilityState === 'visible') void checkPendingRequests(); };
     document.addEventListener('visibilitychange', onVisibility);
 
-    // Supabase Realtime: subscribe to table changes for the selected user (admin-only enhancement)
+    // Supabase Realtime: subscribe to table changes for the selected user and for the global admin overview.
     try {
       const supabase = getSupabase();
       const selected = getSelectedAdminUserId();
-      if (supabase && selected) {
-        realtimeChannel = supabase
-          .channel(`admin-notify-${selected}`)
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'deposit_requests', filter: `user_id=eq.${selected}` }, (payload: any) => {
-            const rec = payload.new || payload.record || payload;
-            if (rec && (rec.status === 'Pending' || rec.status === 'Confirmed') && rec.gateway === 'bank') {
-              setHasPendingRequest(true);
-            }
-          })
-          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'deposit_requests', filter: `user_id=eq.${selected}` }, (payload: any) => {
-            const rec = payload.new || payload.record || payload;
-            if (!rec) return;
-            if ((rec.status === 'Pending' || rec.status === 'Confirmed') && rec.gateway === 'bank') {
-              setHasPendingRequest(true);
-            } else if (rec.status === 'Approved') {
+      if (supabase) {
+        const globalRealtimeTables = ['deposit_requests', 'verification_requests', 'auto_trade_purchases', 'subscriptions', 'withdrawal_requests'];
+        const listenToTable = (table: string, filter?: string) => {
+          realtimeChannel = supabase.channel(filter ? `admin-notify-${table}-${selected ?? 'global'}` : `admin-global-notify-${table}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table, filter }, () => {
               void checkPendingRequests();
-            }
-          })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'user_bank_accounts', filter: `user_id=eq.${selected}` }, () => {
-            // an account was assigned/updated; refresh server state
-            void checkPendingRequests();
-          })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'verification_requests', filter: `user_id=eq.${selected}` }, () => {
-            void checkPendingRequests();
-          })
-          .subscribe();
+            });
+          return realtimeChannel;
+        };
+
+        if (selected) {
+          const selectedChannel = supabase.channel(`admin-notify-${selected}`);
+          selectedChannel
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'deposit_requests', filter: `user_id=eq.${selected}` }, (payload: any) => {
+              const rec = payload.new || payload.record || payload;
+              if (rec && (rec.status === 'Pending' || rec.status === 'Confirmed') && rec.gateway === 'bank') {
+                setHasPendingRequest(true);
+              }
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'deposit_requests', filter: `user_id=eq.${selected}` }, (payload: any) => {
+              const rec = payload.new || payload.record || payload;
+              if (!rec) return;
+              if ((rec.status === 'Pending' || rec.status === 'Confirmed') && rec.gateway === 'bank') {
+                setHasPendingRequest(true);
+              } else if (rec.status === 'Approved') {
+                void checkPendingRequests();
+              }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'user_bank_accounts', filter: `user_id=eq.${selected}` }, () => {
+              void checkPendingRequests();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'verification_requests', filter: `user_id=eq.${selected}` }, () => {
+              void checkPendingRequests();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'auto_trade_purchases', filter: `user_id=eq.${selected}` }, () => {
+              void checkPendingRequests();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions', filter: `user_id=eq.${selected}` }, () => {
+              void checkPendingRequests();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests', filter: `user_id=eq.${selected}` }, () => {
+              void checkPendingRequests();
+            })
+            .subscribe();
+          realtimeChannel = selectedChannel;
+        } else {
+          const globalChannel = supabase.channel('admin-global-pending');
+          globalChannel
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'deposit_requests' }, () => { void checkPendingRequests(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'verification_requests' }, () => { void checkPendingRequests(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'auto_trade_purchases' }, () => { void checkPendingRequests(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => { void checkPendingRequests(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests' }, () => { void checkPendingRequests(); })
+            .subscribe();
+          realtimeChannel = globalChannel;
+        }
       }
     } catch (e) {
       // ignore realtime subscribe errors (fallback to polling/BroadcastChannel)

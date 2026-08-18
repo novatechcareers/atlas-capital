@@ -191,7 +191,9 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
         const accountResult = await accountResponse.json();
         const account = accountResult?.bankAccount ?? null;
 
-        if (account) {
+        const hasAssignedAccount = Boolean(account);
+
+        if (hasAssignedAccount) {
           setBankDetails({
             accountNumber: account.account_number ?? '',
             bankName: account.bank_name ?? '',
@@ -210,9 +212,11 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
           throw new Error(requestResult?.error || 'Unable to load deposit requests.');
         }
 
-        const pendingRequest = (Array.isArray(requestResult?.deposits) ? requestResult.deposits : []).find(
-          (entry: any) => entry.gateway === 'bank' && entry.currency === bankCurrency && (entry.status === 'Pending' || entry.status === 'Confirmed'),
-        );
+        const pendingRequest = hasAssignedAccount
+          ? null
+          : (Array.isArray(requestResult?.deposits) ? requestResult.deposits : []).find(
+              (entry: any) => entry.gateway === 'bank' && entry.currency === bankCurrency && (entry.status === 'Pending' || entry.status === 'Confirmed'),
+            );
 
         const hasRequest = Boolean(pendingRequest);
         setPendingRequest(hasRequest);

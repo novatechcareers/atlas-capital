@@ -7,7 +7,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const body = await req.json();
     const nextStatus = body?.status;
 
-    if (!['Fee pending', 'Pending', 'Approved', 'Declined'].includes(nextStatus)) {
+    if (!['Fee pending', 'Pending', 'Approved', 'Declined', 'Rejected'].includes(nextStatus)) {
       return NextResponse.json({ error: 'Invalid withdrawal status.' }, { status: 400 });
     }
 
