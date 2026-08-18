@@ -22,13 +22,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    const updateData: Record<string, any> = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (status === 'Unlocked') {
+      updateData.activated_at = new Date().toISOString();
+    }
+
     const { data, error } = await supabase
       .from('auto_trade_purchases')
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
-        activated_at: status === 'Unlocked' ? new Date().toISOString() : undefined,
-      })
+      .update(updateData)
       .eq('id', Number(id))
       .select('*')
       .single();
@@ -49,6 +54,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       },
     }, { status: 200 });
   } catch (error: any) {
+    console.error('[auto-trade PATCH] Error:', error);
     return NextResponse.json({ error: error?.message || 'Unable to update auto-trade status.' }, { status: 500 });
   }
 }
