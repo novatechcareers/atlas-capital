@@ -86,7 +86,7 @@ export default function SubscriptionPage() {
     setShowDetails(false);
   };
 
-  const handlePurchase = (plan: SubscriptionTier) => {
+  const handlePurchase = async (plan: SubscriptionTier) => {
     const amountDue = activeSubscription ? plan.price - activeSubscription.price : plan.price;
     if (activeSubscription && amountDue <= 0) {
       setMessage({ type: 'error', text: 'This plan is not an upgrade from your current subscription.' });
@@ -100,19 +100,62 @@ export default function SubscriptionPage() {
       return;
     }
 
-    // Do not mutate balance locally; server/admin will handle payment deduction.
-    void syncBalanceFromServer();
     const now = Date.now();
-    saveActiveSubscription({ id: now, name: plan.name, price: plan.price, status: 'Reviewing', createdAt: now, updatedAt: now });
     const nextSubscription = {
-      id: Date.now(),
+      id: now,
       name: plan.name,
       price: plan.price,
       status: 'Reviewing' as const,
     };
+
+    // Save locally for immediate UI feedback
+    saveActiveSubscription({ id: now, name: plan.name, price: plan.price, status: 'Reviewing', createdAt: now, updatedAt: now });
     const nextSubscriptions = [nextSubscription, ...subscriptions];
     setSubscriptions(nextSubscriptions);
     window.localStorage.setItem(getUserStorageKey('atlas-subscriptions'), JSON.stringify(nextSubscriptions));
+
+    // Send to database and wait for it to complete
+    try {
+      const userId = await new Promise<string | null>((resolve) => {
+        if (typeof window !== 'undefined') {
+          const session = window.sessionStorage?.getItem('atlas-session');
+          if (session) {
+            try {
+              resolve(JSON.parse(session)?.id || null);
+            } catch {
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+
+      if (userId) {
+        const response = await fetch('/api/subscriptions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            name: plan.name,
+            price: plan.price,
+            status: 'Reviewing',
+          }),
+        });
+
+        if (response.ok) {
+          // Sync from server to get the canonical database record
+          const latest = await syncSubscriptionFromServer();
+          setActiveSubscription(latest ?? nextSubscription);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to sync subscription to database:', err);
+    }
+
+    void syncBalanceFromServer();
     setMessage({
       type: 'success',
       text: activeSubscription ? 'Upgrade payment received. Your subscription is loading while the upgrade is reviewed.' : 'Payment received. Your subscription is under review and the other plans are temporarily unavailable.',

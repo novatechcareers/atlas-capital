@@ -25,16 +25,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { data, error } = await supabase
       .from('subscriptions')
       .update({ status: nextStatus, updated_at: new Date().toISOString() })
-      .eq('id', id)
+      .eq('id', Number(id))
       .select('*')
       .single();
 
     if (error) {
+      console.error('[subscription PATCH] Database error:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ subscription: data }, { status: 200 });
   } catch (error: any) {
+    console.error('[subscription PATCH] Error:', error);
     return NextResponse.json({ error: error?.message || 'Unable to update subscription.' }, { status: 500 });
   }
 }

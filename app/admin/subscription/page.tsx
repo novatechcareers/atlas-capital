@@ -11,6 +11,7 @@ export default function AdminSubscriptionPage() {
   const [subscription, setSubscription] = useState<ActiveSubscription | null>(null);
   const [message, setMessage] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
   const selectedUser = selectedUserId ? getAccountById(selectedUserId) : null;
 
   useEffect(() => {
@@ -24,17 +25,39 @@ export default function AdminSubscriptionPage() {
       return () => window.clearTimeout(timer);
     }
 
-    const timer = window.setTimeout(() => setSubscription(getActiveSubscription(selectedUserId)), 0);
-    const unsubscribe = subscribeToSubscription(setSubscription, selectedUserId);
-    return () => {
-      window.clearTimeout(timer);
-      unsubscribe();
+    // Fetch from server first to ensure we see data from the database, not stale localStorage
+    const syncAndSubscribe = async () => {
+      try {
+        const response = await fetch(`/api/subscriptions?userId=${encodeURIComponent(selectedUserId)}`);
+        if (response.ok) {
+          const { subscriptions } = await response.json();
+          const reviewing = Array.isArray(subscriptions) ? subscriptions.find((s: any) => s.status === 'Reviewing') : null;
+          if (reviewing) {
+            setSubscription({
+              id: reviewing.id,
+              name: reviewing.name,
+              price: Number(reviewing.price),
+              status: reviewing.status,
+              createdAt: reviewing.created_at ? new Date(reviewing.created_at).getTime() : Date.now(),
+            });
+          } else {
+            setSubscription(null);
+          }
+        }
+      } catch (err) {
+        setSubscription(null);
+      }
     };
+
+    void syncAndSubscribe();
+    return subscribeToSubscription(setSubscription, selectedUserId);
   }, [selectedUserId]);
 
   const approve = async () => {
     if (!selectedUser || !subscription) return;
+    if (isUpdating) return;
 
+    setIsUpdating(true);
     try {
       const res = await fetch(`/api/admin/subscriptions/${encodeURIComponent(String(subscription.id))}`, {
         method: 'PATCH',
@@ -44,15 +67,24 @@ export default function AdminSubscriptionPage() {
 
       if (!res.ok) {
         setMessage('Failed to approve subscription payment.');
+        setIsUpdating(false);
         return;
       }
 
-      await syncSubscriptionFromServer(selectedUser.id);
-      const latest = getActiveSubscription(selectedUser.id);
-      setSubscription(latest);
+      const { subscription: updated } = await res.json();
+      setSubscription({
+        id: updated.id,
+        name: updated.name,
+        price: Number(updated.price),
+        status: updated.status,
+        createdAt: updated.created_at ? new Date(updated.created_at).getTime() : Date.now(),
+      });
       setMessage('Subscription payment approved. Premium access is now active for the selected user.');
     } catch (err) {
+      console.error('Failed to approve subscription:', err);
       setMessage('Failed to approve subscription payment.');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -83,7 +115,7 @@ export default function AdminSubscriptionPage() {
               <span className={`rounded-full px-4 py-2 text-sm font-semibold ${subscription.status === 'Reviewing' ? 'bg-amber-500/15 text-amber-200' : 'bg-emerald-500/15 text-emerald-200'}`}>{subscription.status}</span>
             </div>
             {subscription.status === 'Reviewing' ? (
-              <button type="button" onClick={approve} className="mt-6 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90">Approve subscription payment</button>
+              <button type="button" disabled={isUpdating} onClick={approve} className="mt-6 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">{isUpdating ? 'Approving...' : 'Approve subscription payment'}</button>
             ) : <p className="mt-6 border-t border-[color:var(--border-soft)] pt-5 text-sm text-emerald-200">Payment approved and subscription active.</p>}
           </div>
         )}
