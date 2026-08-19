@@ -10,6 +10,7 @@ import {
   type AutoTradeHistoryEntry,
   saveAutoTradePurchase,
   subscribeToAutoTrade,
+  subscribeToAutoTradeHistory,
   syncAutoTradeFromServer,
 } from '@/lib/auto-trade';
 import { useLanguage } from '@/components/language-provider';
@@ -58,13 +59,21 @@ export default function AutoTradePage() {
     };
 
     void syncLatest();
-    return subscribeToAutoTrade((next) => setPurchase(next ?? getAutoTradePurchase()));
+    const unsubscribe = subscribeToAutoTrade((next) => setPurchase(next ?? getAutoTradePurchase()));
+    const timer = window.setInterval(() => void syncLatest(), 2000);
+    return () => {
+      unsubscribe();
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
-    setHistory(getAutoTradeHistory());
+    const unsubscribe = subscribeToAutoTradeHistory(setHistory);
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      unsubscribe();
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -97,10 +106,6 @@ export default function AutoTradePage() {
       createdAt: now,
       updatedAt: now,
     };
-
-    // Save locally for immediate UI feedback
-    saveAutoTradePurchase(nextPurchase);
-    setPurchase(nextPurchase);
 
     // Send to database and wait for it to complete
     try {
@@ -142,6 +147,7 @@ export default function AutoTradePage() {
         // Sync from server to get the canonical database record
         const latest = await syncAutoTradeFromServer();
         if (!latest) throw new Error('Unable to load the saved auto-trade purchase.');
+        saveAutoTradePurchase(latest);
         setPurchase(latest);
       }
     } catch (err) {

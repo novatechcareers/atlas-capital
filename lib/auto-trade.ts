@@ -50,7 +50,14 @@ export async function syncAutoTradeFromServer(userId?: string | null) {
     if (!response.ok) return null;
     const payload = await response.json();
     const purchase = payload?.purchase ?? null;
-    if (!purchase) return null;
+    if (!purchase) {
+      const storageKey = getUserStorageKey(AUTO_TRADE_STORAGE_KEY, resolvedUserId);
+      window.localStorage.removeItem(storageKey);
+      const channel = new BroadcastChannel(AUTO_TRADE_CHANNEL);
+      channel.postMessage({ type: 'auto-trade-reset', userId: resolvedUserId });
+      channel.close();
+      return null;
+    }
     const normalized = {
       id: purchase.id ?? Date.now(),
       planName: purchase.planName ?? purchase.plan_name ?? 'Starter',
@@ -129,6 +136,27 @@ export function resetAutoTrade(userId?: string | null) {
   const channel = new BroadcastChannel(AUTO_TRADE_CHANNEL);
   channel.postMessage({ type: 'auto-trade-reset', userId: resolvedUserId });
   channel.close();
+}
+
+export function subscribeToAutoTradeHistory(callback: (history: AutoTradeHistoryEntry[]) => void, userId?: string | null) {
+  const resolvedUserId = userId ?? getCurrentAccountId();
+  const storageKey = getUserStorageKey(AUTO_TRADE_HISTORY_KEY, resolvedUserId);
+  const sync = () => callback(getAutoTradeHistory(resolvedUserId));
+  sync();
+  const storageHandler = (event: StorageEvent) => {
+    if (event.key === storageKey) sync();
+  };
+  const channel = new BroadcastChannel(AUTO_TRADE_CHANNEL);
+  const channelHandler = (event: MessageEvent) => {
+    if (event.data?.userId === resolvedUserId) sync();
+  };
+  window.addEventListener('storage', storageHandler);
+  channel.addEventListener('message', channelHandler);
+  return () => {
+    window.removeEventListener('storage', storageHandler);
+    channel.removeEventListener('message', channelHandler);
+    channel.close();
+  };
 }
 
 export function subscribeToAutoTrade(callback: (purchase: AutoTradePurchase | null) => void, userId?: string | null) {

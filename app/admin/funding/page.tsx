@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AdminShell } from '@/components/admin-shell';
 import { getScopedStorageKey, getSelectedAdminUserId } from '@/lib/auth';
-import { addToBalance, formatCurrency } from '@/lib/balance';
+import { formatCurrency, setStoredBalance } from '@/lib/balance';
 
 type AdminUser = {
   id: string;
@@ -111,7 +111,7 @@ export default function AdminFundingPage() {
         throw new Error(balancePayload?.error || 'Database balance update failed.');
       }
 
-      addToBalance(numericAmount, safeUserId);
+      setStoredBalance(Number(balancePayload.balance ?? nextBalance), safeUserId);
       setMessage(`Account funded successfully with ${formatCurrency(numericAmount)} for ${selectedUser.firstName} ${selectedUser.lastName}.`);
       setAmount('');
       setNote('');

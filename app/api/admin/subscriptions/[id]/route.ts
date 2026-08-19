@@ -25,7 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { data, error } = await supabase
       .from('subscriptions')
       .update({ status: nextStatus, updated_at: new Date().toISOString() })
-      .eq('id', Number(id))
+      .eq('id', id)
       .select('*')
       .single();
 

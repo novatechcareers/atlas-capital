@@ -23,6 +23,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     });
 
     const note = nextStatus === 'Confirmed' ? 'Marked confirmed by admin' : nextStatus === 'Approved' ? 'Approved by admin' : null;
+    const { data: existing, error: existingError } = await supabase
+      .from('deposit_requests')
+      .select('user_id,amount,status')
+      .eq('id', id)
+      .single();
+    if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 });
 
     const updatePayload: any = { status: nextStatus, updated_at: new Date().toISOString() };
     if (note) updatePayload.note = note;
@@ -36,6 +42,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (nextStatus === 'Approved' && existing.status !== 'Approved') {
+      const { error: balanceError } = await supabase.rpc('adjust_user_balance', {
+        p_user_id: existing.user_id,
+        p_delta: Number(existing.amount),
+      });
+      if (balanceError) {
+        await supabase.from('deposit_requests').update({ status: existing.status, updated_at: new Date().toISOString() }).eq('id', id);
+        return NextResponse.json({ error: balanceError.message }, { status: 400 });
+      }
     }
 
     return NextResponse.json({ deposit: data }, { status: 200 });

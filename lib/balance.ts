@@ -60,6 +60,28 @@ export function addToBalance(amount: number, userId?: string | null) {
   return setStoredBalance(getStoredBalance(userId) + amount, userId);
 }
 
+export async function adjustBalanceFromServer(amount: number, userId?: string | null) {
+  if (typeof window === 'undefined') return null;
+  const resolvedUserId = userId ?? getCurrentAccountId();
+  if (!resolvedUserId || !Number.isFinite(amount)) return null;
+
+  try {
+    const response = await fetch('/api/balance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: resolvedUserId, delta: amount }),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const nextBalance = Number(payload?.balance);
+    if (!Number.isFinite(nextBalance)) return null;
+    setStoredBalance(nextBalance, resolvedUserId);
+    return nextBalance;
+  } catch {
+    return null;
+  }
+}
+
 export function subtractFromBalance(amount: number, userId?: string | null) {
   return setStoredBalance(Math.max(0, getStoredBalance(userId) - amount), userId);
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AdminShell } from '@/components/admin-shell';
 import { getScopedStorageKey, getSelectedAdminUser, getSelectedAdminUserId } from '@/lib/auth';
-import { addToBalance, formatCurrency } from '@/lib/balance';
+import { formatCurrency, syncBalanceFromServer } from '@/lib/balance';
 
 type DepositReviewItem = {
   id: number;
@@ -76,9 +76,7 @@ export default function AdminDepositReviewPage() {
       }
 
       const itemToApprove = items.find((item) => String(item.id) === String(id));
-      if (itemToApprove) {
-        addToBalance(itemToApprove.amount, selectedUserId);
-      }
+      if (itemToApprove) void syncBalanceFromServer(selectedUserId);
 
       setItems((current) => current.map((item) => (String(item.id) === String(id) ? { ...item, status: 'Approved' } : item)));
     } catch {

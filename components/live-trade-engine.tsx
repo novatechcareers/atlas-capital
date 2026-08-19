@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { getCurrentAccountId } from '@/lib/auth';
-import { addToBalance } from '@/lib/balance';
+import { adjustBalanceFromServer } from '@/lib/balance';
 import {
   addLiveTradeHistoryEntry,
   calculateLiveTradePnl,
@@ -41,8 +41,9 @@ export function LiveTradeEngine() {
           const executionFee = Math.round(position.amount * 0.0125 * 100) / 100;
           const slippage = Math.round(Math.abs(pnl) * Math.random() * 0.08 * 100) / 100;
           const realizedPnl = Math.round((pnl - executionFee - slippage) * 100) / 100;
-          addToBalance(realizedPnl, userId);
-          addLiveTradeHistoryEntry({
+          void adjustBalanceFromServer(realizedPnl, userId).then((nextBalance) => {
+            if (nextBalance === null) return;
+            addLiveTradeHistoryEntry({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             side: position.side,
             amount: position.amount,
@@ -53,7 +54,8 @@ export function LiveTradeEngine() {
             openedAt: position.openedAt,
             closedAt: Date.now(),
             status: 'Closed',
-          }, userId);
+            }, userId);
+          });
           setLiveTradePosition(null, userId);
           return;
         }

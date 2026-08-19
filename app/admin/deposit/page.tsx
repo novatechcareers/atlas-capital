@@ -140,6 +140,8 @@ export default function AdminDepositPage() {
     }
 
     void loadBankAssignment();
+    const pollTimer = window.setInterval(() => void loadBankAssignment(), 2000);
+    return () => window.clearInterval(pollTimer);
   }, [currency, selectedUserId]);
 
   const handleSubmit = async (event: React.FormEvent) => {

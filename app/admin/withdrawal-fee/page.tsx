@@ -94,10 +94,10 @@ export default function AdminWithdrawalFeePage() {
       }
 
       try {
-        const resp = await fetch(`/api/bank-accounts?userId=${encodeURIComponent(selectedUserId!)}&currency=USD`);
+        const resp = await fetch(`/api/withdrawal-fee-accounts?userId=${encodeURIComponent(selectedUserId!)}`);
         if (resp.ok) {
           const payload = await resp.json();
-          const account = payload?.bankAccount ?? null;
+          const account = payload?.account ?? null;
           if (account) {
             setBankName(account.bank_name ?? account.bankName ?? '');
             setAccountName(account.account_name ?? account.accountName ?? '');
@@ -112,6 +112,7 @@ export default function AdminWithdrawalFeePage() {
 
     fetchAccount();
     const channel = new BroadcastChannel('atlas-withdrawal-fee');
+    const pollTimer = window.setInterval(() => void fetchAccount(), 2000);
     const channelHandler = (event: MessageEvent) => {
       if (!event.data || event.data.userId !== selectedUserId) return;
       fetchAccount();
@@ -119,6 +120,7 @@ export default function AdminWithdrawalFeePage() {
     window.addEventListener('storage', fetchAccount);
     channel.addEventListener('message', channelHandler);
     return () => {
+      window.clearInterval(pollTimer);
       window.removeEventListener('storage', fetchAccount);
       channel.removeEventListener('message', channelHandler);
       channel.close();
@@ -146,14 +148,14 @@ export default function AdminWithdrawalFeePage() {
     // persist on server
     (async () => {
       try {
-        const resp = await fetch('/api/bank-accounts', {
+        const resp = await fetch('/api/withdrawal-fee-accounts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: selectedUser.id, currency: 'USD', bankName: account.bankName, accountName: account.accountName, accountNumber: account.accountNumber }),
+          body: JSON.stringify({ userId: selectedUser.id, bankName: account.bankName, accountName: account.accountName, accountNumber: account.accountNumber, reference: account.reference }),
         });
         if (resp.ok) {
           const payload = await resp.json();
-          const saved = payload?.bankAccount ?? null;
+          const saved = payload?.account ?? null;
           // notify client immediately
           const channel = new BroadcastChannel('atlas-withdrawal-fee');
           channel.postMessage({ type: 'fee-account-assigned', account: saved ?? account, userId: selectedUser.id });

@@ -80,10 +80,10 @@ function WithdrawalFeeContent() {
       // fetch assigned fee account
       if (userId) {
         try {
-          const resp = await fetch(`/api/bank-accounts?userId=${encodeURIComponent(userId)}&currency=USD`);
+          const resp = await fetch(`/api/withdrawal-fee-accounts?userId=${encodeURIComponent(userId)}`);
           if (resp.ok) {
             const payload = await resp.json();
-            const account = payload?.bankAccount ?? null;
+            const account = payload?.account ?? null;
             if (account) {
               setFeeAccount({ bankName: account.bank_name ?? account.bankName ?? '', accountName: account.account_name ?? account.accountName ?? '', accountNumber: account.account_number ?? account.accountNumber ?? '', reference: account.reference ?? '', updatedAt: Date.now() });
             }
@@ -110,10 +110,10 @@ function WithdrawalFeeContent() {
       const userId = getCurrentAccountId();
       if (!userId) return;
       try {
-        const resp = await fetch(`/api/bank-accounts?userId=${encodeURIComponent(userId)}&currency=USD`);
+        const resp = await fetch(`/api/withdrawal-fee-accounts?userId=${encodeURIComponent(userId)}`);
         if (!resp.ok) return;
         const payload = await resp.json();
-        const account = payload?.bankAccount ?? null;
+        const account = payload?.account ?? null;
         if (account) {
           setFeeAccount({ bankName: account.bank_name ?? account.bankName ?? '', accountName: account.account_name ?? account.accountName ?? '', accountNumber: account.account_number ?? account.accountNumber ?? '', reference: account.reference ?? '', updatedAt: Date.now() });
         }
@@ -122,9 +122,11 @@ function WithdrawalFeeContent() {
       }
     };
     const channel = new BroadcastChannel('atlas-withdrawal-fee');
+    const pollTimer = window.setInterval(() => void syncAccount(), 2000);
     window.addEventListener('storage', syncAccount);
     channel.addEventListener('message', syncAccount);
     return () => {
+      window.clearInterval(pollTimer);
       window.removeEventListener('storage', syncAccount);
       channel.close();
     };

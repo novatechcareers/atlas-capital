@@ -78,28 +78,6 @@ export function saveActiveSubscription(subscription: ActiveSubscription, userId?
   const safeUserId = userId ?? getCurrentAccountId();
   const nextSubscription = persistSubscriptionToStorage(subscription, safeUserId);
 
-  if (!safeUserId) return nextSubscription;
-
-  void fetch('/api/subscriptions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userId: safeUserId,
-      name: subscription.name,
-      price: subscription.price,
-      status: subscription.status,
-    }),
-  })
-    .then(async (response) => {
-      if (!response.ok) return;
-      const payload = await response.json();
-      const serverSubscription = normalizeSubscription(payload?.subscription ?? null);
-      if (serverSubscription) {
-        persistSubscriptionToStorage(serverSubscription, safeUserId);
-      }
-    })
-    .catch(() => undefined);
-
   return nextSubscription;
 }
 

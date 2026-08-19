@@ -67,6 +67,12 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    const { error: balanceError } = await supabase.rpc('adjust_user_balance', {
+      p_user_id: userId,
+      p_delta: -Number(price),
+    });
+    if (balanceError) return NextResponse.json({ error: balanceError.message }, { status: 400 });
+
     const { data, error } = await supabase
       .from('auto_trade_purchases')
       .insert({
@@ -80,6 +86,7 @@ export async function POST(req: Request) {
       .single();
 
     if (error) {
+      await supabase.rpc('adjust_user_balance', { p_user_id: userId, p_delta: Number(price) });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 

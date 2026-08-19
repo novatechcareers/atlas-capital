@@ -2,6 +2,7 @@
 
 import Script from 'next/script';
 import { useEffect } from 'react';
+import { useLanguage } from './language-provider';
 
 declare global {
   interface Window {
@@ -23,6 +24,8 @@ function applyGoogleTranslateCookie(language: 'en' | 'pt-BR') {
 }
 
 export function GoogleTranslateBridge() {
+  const { language } = useLanguage();
+
   useEffect(() => {
     window.googleTranslateElementInit = () => {
       if (window.google?.translate?.TranslateElement) {
@@ -38,11 +41,9 @@ export function GoogleTranslateBridge() {
       }
     };
 
-    const existingLanguage = document.cookie.includes('googtrans=') ? document.cookie : null;
-    if (existingLanguage) {
-      window.googleTranslateElementInit?.();
-    }
-  }, []);
+    applyGoogleTranslateCookie(language);
+    window.googleTranslateElementInit?.();
+  }, [language]);
 
   return (
     <>
@@ -51,7 +52,7 @@ export function GoogleTranslateBridge() {
         src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
         strategy="afterInteractive"
         onLoad={() => {
-          applyGoogleTranslateCookie('en');
+          applyGoogleTranslateCookie(language);
           window.googleTranslateElementInit?.();
         }}
       />

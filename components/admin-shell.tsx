@@ -272,7 +272,7 @@ export function AdminShell({ title, subtitle, children }: { title: string; subti
         <main className="flex-1 bg-[radial-gradient(circle_at_top_left,var(--hero-glow),transparent_28%)] p-5 lg:p-8">
           <header className="brand-panel-strong mb-8 flex flex-col gap-4 rounded-3xl p-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Admin portal</p>
+              <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{t('adminPortal')}</p>
               <h1 className="text-2xl font-semibold text-[var(--text-primary)]">{translatePageText(language, title)}</h1>
               <p className="mt-1 text-sm text-[color:var(--text-secondary)]">{translatePageText(language, subtitle)}</p>
             </div>

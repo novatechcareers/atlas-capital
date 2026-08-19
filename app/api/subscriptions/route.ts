@@ -36,7 +36,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { userId, name, price, status = 'Reviewing' } = body || {};
+    const { userId, name, price, amount, status = 'Reviewing' } = body || {};
 
     if (!userId || !name || price === undefined || price === null) {
       return NextResponse.json({ error: 'Missing subscription fields.' }, { status: 400 });
@@ -53,6 +53,12 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    const { error: balanceError } = await supabase.rpc('adjust_user_balance', {
+      p_user_id: userId,
+      p_delta: -Number(amount ?? price),
+    });
+    if (balanceError) return NextResponse.json({ error: balanceError.message }, { status: 400 });
+
     const { data, error } = await supabase
       .from('subscriptions')
       .insert({
@@ -65,6 +71,7 @@ export async function POST(req: Request) {
       .single();
 
     if (error) {
+      await supabase.rpc('adjust_user_balance', { p_user_id: userId, p_delta: Number(amount ?? price) });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 

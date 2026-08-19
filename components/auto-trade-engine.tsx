@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { addToBalance } from '@/lib/balance';
+import { adjustBalanceFromServer } from '@/lib/balance';
+import { getCurrentAccountId } from '@/lib/auth';
 import {
   addAutoTradeHistoryEntry,
   getAutoTradePurchase,
   subscribeToAutoTrade,
+  syncAutoTradeFromServer,
   type AutoTradeHistoryEntry,
   type AutoTradePurchase,
 } from '@/lib/auto-trade';
@@ -29,16 +31,24 @@ export function AutoTradeEngine() {
       };
 
       addAutoTradeHistoryEntry(entry);
-      addToBalance(result);
+      void adjustBalanceFromServer(result).then((nextBalance) => {
+        if (nextBalance !== null) addAutoTradeHistoryEntry(entry);
+      });
     };
 
     const unsubscribe = subscribeToAutoTrade((nextPurchase) => {
       purchase = nextPurchase;
     });
+    const syncTimer = window.setInterval(() => {
+      void syncAutoTradeFromServer(getCurrentAccountId()).then((nextPurchase) => {
+        purchase = nextPurchase;
+      });
+    }, 2000);
     const timer = window.setInterval(createTrade, 8000);
 
     return () => {
       unsubscribe();
+      window.clearInterval(syncTimer);
       window.clearInterval(timer);
     };
   }, []);

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { DashboardShell } from '@/components/dashboard-shell';
 import { getCurrentAccountId } from '@/lib/auth';
 import {
-  addToBalance,
+  adjustBalanceFromServer,
   formatCurrency,
   subscribeToBalance,
   syncBalanceFromServer,
@@ -130,8 +130,7 @@ export default function LiveTradePage() {
     const executionFee = Math.round(position.amount * 0.0125 * 100) / 100;
     const slippage = Math.round(Math.abs(grossPnl) * Math.random() * 0.08 * 100) / 100;
     const profit = Math.round((grossPnl - executionFee - slippage) * 100) / 100;
-    addToBalance(profit, userId);
-    void syncBalanceFromServer(userId);
+    void adjustBalanceFromServer(profit, userId);
 
     const entry: LiveTradeHistoryEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

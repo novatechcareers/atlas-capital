@@ -236,6 +236,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
     }
 
     void syncBankState();
+    const pollTimer = window.setInterval(() => void syncBankState(), 2000);
 
     let realtimeChannel: any = null;
     try {
@@ -259,6 +260,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
     }
 
     return () => {
+      window.clearInterval(pollTimer);
       try {
         if (realtimeChannel && typeof realtimeChannel.unsubscribe === 'function') realtimeChannel.unsubscribe();
       } catch {}

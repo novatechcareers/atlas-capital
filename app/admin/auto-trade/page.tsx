@@ -99,11 +99,21 @@ export default function AdminAutoTradePage() {
     }
   };
 
-  const handleReset = () => {
-    if (!selectedUserId) return;
-    resetAutoTrade(selectedUserId);
-    setPurchase(null);
-    setMessage(tr('Auto-trade bot closed and payment selection has been restored for the client.'));
+  const handleReset = async () => {
+    if (!selectedUserId || !purchase || isUpdating) return;
+    setIsUpdating(true);
+    try {
+      const response = await fetch(`/api/admin/auto-trade/${encodeURIComponent(String(purchase.id))}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Unable to reset auto-trade.');
+      resetAutoTrade(selectedUserId);
+      setPurchase(null);
+      setMessage(tr('Auto-trade bot closed and payment selection has been restored for the client.'));
+    } catch (error) {
+      console.error('Failed to reset auto-trade:', error);
+      setMessage('Failed to reset auto-trade.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   return (

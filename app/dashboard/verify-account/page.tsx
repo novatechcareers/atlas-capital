@@ -17,6 +17,7 @@ export default function VerifyAccountPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export default function VerifyAccountPage() {
   };
 
   const handleUpload = async () => {
+    if (isUploading) return;
     if (!selectedFile) {
       setMessage({ type: 'error', text: 'Please select a document to upload.' });
       return;
@@ -70,14 +72,18 @@ export default function VerifyAccountPage() {
       uploadedAt: Date.now(),
     };
 
-    const savedRequest = await saveStoredVerification(request);
-    if (!savedRequest) {
-      setMessage({ type: 'error', text: 'Unable to upload your document. Please try again.' });
-      return;
+    setIsUploading(true);
+    try {
+      const savedRequest = await saveStoredVerification(request);
+      if (!savedRequest) {
+        setMessage({ type: 'error', text: 'Unable to upload your document. Please try again.' });
+        return;
+      }
+      setRequest(savedRequest);
+      setMessage({ type: 'success', text: 'Document uploaded successfully. Admin will review your verification shortly.' });
+    } finally {
+      setIsUploading(false);
     }
-
-    setRequest(savedRequest);
-    setMessage({ type: 'success', text: 'Document uploaded successfully. Admin will review your verification shortly.' });
   };
 
   const renderStatus = () => {
@@ -176,9 +182,10 @@ export default function VerifyAccountPage() {
           <button
             type="button"
             onClick={handleUpload}
+            disabled={!selectedFile || !previewUrl || isUploading}
             className="mt-3 w-full rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90"
           >
-            Upload Document for Verification
+            {isUploading ? 'Uploading...' : 'Upload Document for Verification'}
           </button>
         </div>
         )}

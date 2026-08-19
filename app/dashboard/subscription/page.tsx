@@ -60,7 +60,12 @@ export default function SubscriptionPage() {
     };
 
     void syncLatest();
-    return subscribeToSubscription((next) => setActiveSubscription(next ?? getActiveSubscription()));
+    const unsubscribe = subscribeToSubscription((next) => setActiveSubscription(next ?? getActiveSubscription()));
+    const timer = window.setInterval(() => void syncLatest(), 2000);
+    return () => {
+      unsubscribe();
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -110,12 +115,6 @@ export default function SubscriptionPage() {
       updatedAt: now,
     };
 
-    // Save locally for immediate UI feedback
-    saveActiveSubscription({ id: now, name: plan.name, price: plan.price, status: 'Reviewing', createdAt: now, updatedAt: now });
-    const nextSubscriptions = [nextSubscription, ...subscriptions];
-    setSubscriptions(nextSubscriptions);
-    window.localStorage.setItem(getUserStorageKey('atlas-subscriptions'), JSON.stringify(nextSubscriptions));
-
     // Send to database and wait for it to complete
     try {
       const userId = await new Promise<string | null>((resolve) => {
@@ -135,7 +134,8 @@ export default function SubscriptionPage() {
         }
       });
 
-      if (userId) {
+      if (!userId) throw new Error('Unable to identify account.');
+      {
         const response = await fetch('/api/subscriptions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -143,18 +143,24 @@ export default function SubscriptionPage() {
             userId,
             name: plan.name,
             price: plan.price,
+            amount: amountDue,
             status: 'Reviewing',
           }),
         });
 
-        if (response.ok) {
-          // Sync from server to get the canonical database record
-          const latest = await syncSubscriptionFromServer();
-          setActiveSubscription(latest ?? nextSubscription);
-        }
+        if (!response.ok) throw new Error('Unable to save subscription payment.');
+        const latest = await syncSubscriptionFromServer();
+        if (!latest) throw new Error('Unable to load saved subscription.');
+        saveActiveSubscription(latest);
+        setActiveSubscription(latest);
+        const nextSubscriptions = [latest, ...subscriptions];
+        setSubscriptions(nextSubscriptions as unknown as PurchasedSubscription[]);
+        window.localStorage.setItem(getUserStorageKey('atlas-subscriptions'), JSON.stringify(nextSubscriptions));
       }
     } catch (err) {
       console.error('Failed to sync subscription to database:', err);
+      setMessage({ type: 'error', text: 'Unable to save subscription payment. Please try again.' });
+      return;
     }
 
     void syncBalanceFromServer();

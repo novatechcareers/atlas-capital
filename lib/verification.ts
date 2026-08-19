@@ -55,13 +55,17 @@ export async function syncVerificationFromServer(userId?: string | null) {
 
   try {
     const response = await fetch(`/api/verification?userId=${encodeURIComponent(resolvedUserId)}`);
-    if (!response.ok) return null;
+    if (!response.ok) {
+      window.localStorage.removeItem(getUserStorageKey(VERIFICATION_STORAGE_KEY, resolvedUserId));
+      return null;
+    }
     const payload = await response.json();
     const request = normalizeVerificationRequest(payload?.request ?? payload?.requests?.[0] ?? null);
     if (!request) return null;
     persistVerificationToStorage(request, resolvedUserId);
     return request;
   } catch {
+    window.localStorage.removeItem(getUserStorageKey(VERIFICATION_STORAGE_KEY, resolvedUserId));
     return null;
   }
 }
