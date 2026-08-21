@@ -16,7 +16,7 @@ export async function GET(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    let query = supabase.from('withdrawal_requests').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('withdrawal_requests').select('id,user_id,amount,currency,method,wallet_address,bank_account,status,note,created_at,updated_at').order('created_at', { ascending: false });
     if (userId) {
       query = query.eq('user_id', userId);
     }
@@ -26,7 +26,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ withdrawals: data ?? [] }, { status: 200 });
+    const userIds = Array.from(new Set((data ?? []).map((item: any) => item.user_id).filter(Boolean)));
+    const { data: profiles } = userIds.length
+      ? await supabase.from('profiles').select('id,first_name,last_name,email').in('id', userIds)
+      : { data: [] };
+    const profileMap = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]));
+    const withdrawals = (data ?? []).map((item: any) => {
+      const profile = profileMap.get(item.user_id);
+      return {
+        ...item,
+        user_name: profile ? `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim() || profile.email : 'Unknown user',
+      };
+    });
+
+    return NextResponse.json({ withdrawals }, { status: 200 });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Unable to load withdrawal requests.' }, { status: 500 });
   }

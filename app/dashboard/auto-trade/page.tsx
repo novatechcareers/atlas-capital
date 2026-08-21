@@ -80,11 +80,11 @@ export default function AutoTradePage() {
     if (!purchase) return;
 
     if (purchase.status === 'Reviewing') {
-      setMessage(tr('Payment is under review. The bot will start after admin confirmation.'));
+      setMessage(tr('Payment under review.'));
     } else if (purchase.status === 'Running') {
-      setMessage(tr('Payment confirmed. Your auto-trade bot is running.'));
+      setMessage(tr('Payment confirmed. Auto trade is active.'));
     } else if (purchase.status === 'Unlocked') {
-      setMessage(tr('Payment confirmed. Your auto-trade bot is unlocked and ready to start.'));
+      setMessage(tr('Payment confirmed. Auto trade is ready.'));
     } else if (purchase.status === 'Stopped') {
       setMessage(tr('Your auto-trade bot is currently stopped.'));
     }
@@ -158,7 +158,7 @@ export default function AutoTradePage() {
 
     await syncBalanceFromServer();
     setSelectedPlan(null);
-    setMessage(tr('Payment received and is under review. Your bot will start after admin confirmation.'));
+    setMessage(tr('Payment received and under review.'));
   };
 
   const planDays = purchase?.planName === 'Starter' ? 3 : purchase?.planName === 'Pro' ? 7 : 12;
@@ -168,7 +168,7 @@ export default function AutoTradePage() {
   const totalProfit = useMemo(() => history.reduce((total, entry) => total + entry.result, 0), [history]);
 
   return (
-    <DashboardShell title="Auto Trade" subtitle="Plan selection and automation management for your account.">
+    <DashboardShell title="Auto Trade" subtitle="Plans and automation status.">
       <div className="space-y-6">
         <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.92)] p-5 shadow-lg shadow-black/30">
           <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{tr('Available balance')}</p>

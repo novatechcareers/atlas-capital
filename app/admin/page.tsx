@@ -15,15 +15,15 @@ type AdminNotifications = {
 };
 
 const sections = [
-  { title: 'Deposit admin', href: '/admin/deposit', description: 'Handle premium bank account assignments for deposits.' },
-  { title: 'Deposit review', href: '/admin/deposit-review', description: 'Review client deposit confirmations and approve them.' },
-  { title: 'Auto trade', href: '/admin/auto-trade', description: 'Review auto-trade payments and control the client bot.' },
-  { title: 'Subscriptions', href: '/admin/subscription', description: 'Review subscription payments and activate premium access.' },
-  { title: 'Manual funding', href: '/admin/funding', description: 'Top up the account balance directly from the admin side.' },
-  { title: 'Withdrawal review', href: '/admin/withdrawal', description: 'Approve or decline client withdrawal requests.' },
-  { title: 'Withdrawal fee', href: '/admin/withdrawal-fee', description: 'Assign the payment account for the fixed international transfer fee.' },
-  { title: 'Verify accounts', href: '/admin/verify-account', description: 'Review user documents and approve or decline verification.' },
-  { title: 'Users', href: '/admin/users', description: 'Manage customer accounts and access.' },
+  { title: 'Deposit accounts', href: '/admin/deposit', description: 'Bank account assignments' },
+  { title: 'Deposit review', href: '/admin/deposit-review', description: 'Funding confirmations' },
+  { title: 'Auto trade', href: '/admin/auto-trade', description: 'Plan payments and automation' },
+  { title: 'Subscriptions', href: '/admin/subscription', description: 'Subscription payments' },
+  { title: 'Manual funding', href: '/admin/funding', description: 'Account balance adjustments' },
+  { title: 'Withdrawal review', href: '/admin/withdrawal', description: 'Withdrawal requests' },
+  { title: 'Withdrawal fee', href: '/admin/withdrawal-fee', description: 'Transfer fee accounts' },
+  { title: 'Verify accounts', href: '/admin/verify-account', description: 'Identity documents' },
+  { title: 'Users', href: '/admin/users', description: 'Account records and access' },
   { title: 'Reports', href: '/admin/reports', description: 'View activity and transaction summaries.' },
   { title: 'Settings', href: '/admin/settings', description: 'Configure system-wide administration settings.' },
 ];
@@ -101,7 +101,7 @@ export default function AdminPage() {
   }, [selectedUserId]);
 
   return (
-    <AdminShell title="Admin Portal" subtitle="Central control for deposit handling and site administration.">
+    <AdminShell title="Operations" subtitle="Account activity and approvals.">
       <div className="mx-auto max-w-4xl space-y-6">
         {notifications && (notifications.depositPending || notifications.verificationPending || notifications.autoTradePending || notifications.feePending || notifications.subscriptionPending) ? (
           <div className="rounded-3xl border border-amber-400/30 bg-amber-500/10 p-4">
@@ -116,9 +116,9 @@ export default function AdminPage() {
           </div>
         ) : null}
         <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
-          <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Admin center</p>
-          <h1 className="mt-4 text-3xl font-semibold text-[var(--text-white)]">Website administration</h1>
-          <p className="mt-3 text-sm text-slate-400">Manage bank assignment flows, deposit controls, user access, and administration features from one panel.</p>
+          <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Operations</p>
+          <h1 className="mt-4 text-3xl font-semibold text-[var(--text-white)]">Account operations</h1>
+          <p className="mt-3 text-sm text-slate-400">Review activity, manage balances, and process account requests.</p>
         </div>
 
         {autoTradePurchase?.status === 'Reviewing' ? (

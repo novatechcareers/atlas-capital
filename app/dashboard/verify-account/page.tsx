@@ -80,7 +80,7 @@ export default function VerifyAccountPage() {
         return;
       }
       setRequest(savedRequest);
-      setMessage({ type: 'success', text: 'Document uploaded successfully. Admin will review your verification shortly.' });
+      setMessage({ type: 'success', text: 'Document submitted for identity review.' });
     } finally {
       setIsUploading(false);
     }
@@ -116,7 +116,7 @@ export default function VerifyAccountPage() {
   };
 
   return (
-    <DashboardShell title="Verify Account" subtitle="Upload your identification document for review and account approval.">
+    <DashboardShell title="Identity Verification" subtitle="Identity document status.">
       <div className="mx-auto max-w-3xl space-y-6 rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
         <div className="rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--primary-gold)]/10 px-5 py-4">
           <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Account verification</p>

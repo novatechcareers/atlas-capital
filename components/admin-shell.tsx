@@ -217,7 +217,7 @@ export function AdminShell({ title, subtitle, children }: { title: string; subti
             </div>
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Atlas Admin</p>
-              <p className="text-lg font-semibold text-[var(--text-primary)]">Control panel</p>
+              <p className="text-lg font-semibold text-[var(--text-primary)]">Operations</p>
             </div>
           </div>
 

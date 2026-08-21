@@ -45,3 +45,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error?.message || 'Unable to save withdrawal fee account.' }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const userId = new URL(req.url).searchParams.get('userId');
+    if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 });
+    const supabase = getServiceClient();
+    if (!supabase) return NextResponse.json({ error: 'Database not configured for withdrawal fee accounts.' }, { status: 500 });
+    const { error } = await supabase.from('withdrawal_fee_accounts').delete().eq('user_id', userId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || 'Unable to reset withdrawal fee account.' }, { status: 500 });
+  }
+}

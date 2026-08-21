@@ -98,13 +98,13 @@ export default function AdminVerifyAccountPage() {
   };
 
   const handleApprove = async () => {
-    if (!request || !selectedUser) return;
+    if (!request || !selectedUserId) return;
 
     const updatedRequest = await updateVerification({
       status: 'Approved',
       reason: undefined,
       reviewedAt: Date.now(),
-    }, selectedUser.id);
+    }, selectedUserId);
     if (!updatedRequest) {
       setMessage({ type: 'error', text: 'Unable to approve verification. Please try again.' });
       return;
@@ -114,7 +114,7 @@ export default function AdminVerifyAccountPage() {
   };
 
   const handleDecline = async () => {
-    if (!request || !selectedUser) return;
+    if (!request || !selectedUserId) return;
     if (!reason.trim()) {
       setMessage({ type: 'error', text: 'Please provide a reason for declining the document.' });
       return;
@@ -124,7 +124,7 @@ export default function AdminVerifyAccountPage() {
       status: 'Declined',
       reason: reason.trim(),
       reviewedAt: Date.now(),
-    }, selectedUser.id);
+    }, selectedUserId);
     if (!updatedRequest) {
       setMessage({ type: 'error', text: 'Unable to decline verification. Please try again.' });
       return;
@@ -134,7 +134,7 @@ export default function AdminVerifyAccountPage() {
   };
 
   return (
-    <AdminShell title="Verify Account" subtitle="Review the selected user’s uploaded documents and approve or decline verification.">
+    <AdminShell title="Identity Review" subtitle="Identity document queue.">
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -142,11 +142,11 @@ export default function AdminVerifyAccountPage() {
               <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Verification review</p>
               <div className="mt-2 flex items-center gap-3">
                 <h2 className="text-2xl font-semibold text-[var(--text-white)]">{selectedUser ? `${selectedUser.firstName} ${selectedUser.lastName}'s verification` : 'Pending account verification'}</h2>
-                <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Choose user</Link>
+                <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Select account</Link>
               </div>
             </div>
             <div className="rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--surface)] px-4 py-3 text-sm text-slate-300">
-              {request ? request.status : 'No verification request'}
+              {request ? request.status : selectedUserId ? 'No verification request' : 'No user selected'}
             </div>
           </div>
         </div>
@@ -157,9 +157,9 @@ export default function AdminVerifyAccountPage() {
           </div>
         ) : null}
 
-        {!selectedUser ? (
+        {!selectedUserId ? (
           <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 text-sm text-slate-300 shadow-lg shadow-black/30">
-            Choose a user first to review their verification documents.
+            Select an account to review identity documents.
           </div>
         ) : request ? (
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">

@@ -117,15 +117,15 @@ export default function AdminAutoTradePage() {
   };
 
   return (
-    <AdminShell title="Auto Trade" subtitle="Review plan payments and control the client automation bot.">
+    <AdminShell title="Auto Trade" subtitle="Plan payments and automation status.">
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{tr('Auto-trade payment queue')}</p>
           <div className="mt-2 flex items-center gap-3">
             <h2 className="text-2xl font-semibold text-[var(--text-white)]">{tr('Payment and bot controls')}</h2>
-            <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Choose user</Link>
+            <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Select account</Link>
           </div>
-          <p className="mt-3 text-sm text-slate-400">{tr('Confirm the payment first. The bot controls unlock below and update the user portal in real time.')}</p>
+          <p className="mt-3 text-sm text-slate-400">{tr('Payment and automation controls.')}</p>
         </div>
 
         {message ? <div className="rounded-3xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{message}</div> : null}
@@ -137,7 +137,7 @@ export default function AdminAutoTradePage() {
             <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-sm text-slate-400">{tr('Client auto-trade plan')}</p>
+                  <p className="text-sm text-slate-400">{tr('Account auto-trade plan')}</p>
                   <h3 className="mt-2 text-2xl font-semibold text-[var(--text-white)]">{purchase.planName}</h3>
                   <p className="mt-2 text-sm text-slate-300">{tr('Payment:')} {formatCurrency(purchase.price)}</p>
                 </div>

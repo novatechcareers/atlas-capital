@@ -50,7 +50,7 @@ export default function AdminUsersPage() {
   }, []);
 
   return (
-    <AdminShell title="Admin Users" subtitle="Manage customer accounts and access controls.">
+    <AdminShell title="Accounts" subtitle="Account records and access.">
       <div className="mx-auto max-w-6xl rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
@@ -64,7 +64,7 @@ export default function AdminUsersPage() {
 
         {loading ? (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-8 text-center text-slate-300">
-            Loading users from database...
+            Loading accounts...
           </div>
         ) : users.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-8 text-center text-slate-300">

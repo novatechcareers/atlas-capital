@@ -131,7 +131,7 @@ export function DashboardShell({
               >
                 ☰
               </button>
-              <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{t('clientPortal')}</p>
+              <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{t('account')}</p>
               <h1 className="text-2xl font-semibold text-[var(--text-primary)]">{translatePageText(language, title)}</h1>
               <p className="mt-1 text-sm text-[color:var(--text-secondary)]">{translatePageText(language, subtitle)}</p>
             </div>

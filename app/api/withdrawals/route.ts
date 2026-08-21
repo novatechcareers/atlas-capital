@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createWithdrawalRequest, validateWithdrawalAmount } from '@/lib/withdrawal';
 
 export async function GET(req: Request) {
   try {
@@ -41,6 +42,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing withdrawal fields.' }, { status: 400 });
     }
 
+    const amountError = validateWithdrawalAmount(amount, method);
+    if (amountError) return NextResponse.json({ error: amountError }, { status: 400 });
+
     const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -52,20 +56,8 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const { data, error } = await supabase
-      .from('withdrawal_requests')
-      .insert({
-        user_id: userId,
-        amount: Number(amount),
-        currency,
-        method,
-        wallet_address: walletAddress ?? null,
-        bank_account: bankAccount ?? null,
-        status,
-        note: note ?? 'Withdrawal request submitted',
-      })
-      .select('*')
-      .single();
+    const result = await createWithdrawalRequest(supabase, { userId, amount, currency, method, walletAddress, bankAccount, status, note });
+    const { data, error } = result;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

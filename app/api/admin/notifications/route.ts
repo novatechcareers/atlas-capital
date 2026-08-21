@@ -40,12 +40,11 @@ export async function GET(req: Request) {
         result.depositPending = false;
       } else {
         // only consider bank gateway entries that are still Pending/Confirmed
-        const bankDeposits = deposits.filter((d: any) => d.gateway === 'bank');
-        if (bankDeposits.length === 0) {
+        const depositRequests = deposits;
+        if (depositRequests.length === 0) {
           result.depositPending = false;
         } else {
-          // check if an admin has already assigned a bank account for the deposit currency
-          const currencies = Array.from(new Set(bankDeposits.map((d: any) => d.currency || 'USD')));
+          const currencies = Array.from(new Set(depositRequests.map((d: any) => d.currency || 'USD')));
           const { data: accounts } = await supabase
             .from('user_bank_accounts')
             .select('currency')
@@ -54,8 +53,7 @@ export async function GET(req: Request) {
 
           const assignedCurrencies = Array.isArray(accounts) ? accounts.map((a: any) => a.currency) : [];
 
-          // deposit is pending when there exists a bank deposit for which there is no assigned account yet
-          result.depositPending = bankDeposits.some((d: any) => !assignedCurrencies.includes(d.currency));
+          result.depositPending = depositRequests.some((d: any) => !assignedCurrencies.includes(d.currency));
         }
       }
 
@@ -85,16 +83,15 @@ export async function GET(req: Request) {
         .in('status', ['Pending', 'Confirmed']);
 
       if (Array.isArray(anyDeposits) && anyDeposits.length > 0) {
-        const bankDeposits = anyDeposits.filter((d: any) => d.gateway === 'bank');
-        if (bankDeposits.length > 0) {
-          const currencies = Array.from(new Set(bankDeposits.map((d: any) => d.currency || 'USD')));
+        if (anyDeposits.length > 0) {
+          const currencies = Array.from(new Set(anyDeposits.map((d: any) => d.currency || 'USD')));
           const { data: accounts } = await supabase
             .from('user_bank_accounts')
-            .select('currency')
+            .select('user_id,currency')
             .in('currency', currencies);
 
-          const assignedCurrencies = Array.isArray(accounts) ? accounts.map((a: any) => a.currency) : [];
-          result.depositPending = bankDeposits.some((d: any) => !assignedCurrencies.includes(d.currency));
+          const assignedKeys = new Set((accounts ?? []).map((a: any) => `${a.user_id}:${a.currency}`));
+          result.depositPending = anyDeposits.some((d: any) => !assignedKeys.has(`${d.user_id}:${d.currency}`));
         }
       }
 

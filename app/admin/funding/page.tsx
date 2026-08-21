@@ -81,7 +81,7 @@ export default function AdminFundingPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedUserId || !selectedUser) {
-      setMessage('Choose a user first before funding an account.');
+      setMessage('Select an account before adding funds.');
       return;
     }
 
@@ -127,10 +127,10 @@ export default function AdminFundingPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Admin funding</p>
           <div className="mt-2 flex items-center gap-3">
             <h2 className="text-2xl font-semibold text-[var(--text-white)]">Top up the account directly</h2>
-            <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Choose user</Link>
+            <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Select account</Link>
           </div>
           <p className="mt-3 text-sm text-slate-400">
-            {selectedUser ? `This action updates the balance for ${selectedUser.firstName} ${selectedUser.lastName}.` : 'Choose a user first before funding any account.'}
+            {selectedUser ? `Balance adjustment for ${selectedUser.firstName} ${selectedUser.lastName}.` : 'Select an account to continue.'}
           </p>
         </div>
 

@@ -24,6 +24,7 @@ export default function DepositPage() {
   const router = useRouter();
   const [amount, setAmount] = useState('500');
   const [gateway, setGateway] = useState('btc');
+  const [bankCurrency, setBankCurrency] = useState('USD');
   const [isLoading, setIsLoading] = useState(false);
   const [validationMessage, setValidationMessage] = useState('');
   const minimumAmount = gateway === 'bank' ? 100 : 50;
@@ -40,34 +41,33 @@ export default function DepositPage() {
 
     setIsLoading(true);
     setTimeout(() => {
-      router.push(`/dashboard/deposit/${gateway}?amount=${encodeURIComponent(amount)}`);
+      const currencyQuery = gateway === 'bank' ? `&currency=${encodeURIComponent(bankCurrency)}` : '';
+      router.push(`/dashboard/deposit/${gateway}?amount=${encodeURIComponent(amount)}${currencyQuery}`);
     }, 1100);
   };
 
   return (
-    <DashboardShell title="Deposit" subtitle="Follow the guided deposit flow and complete your funding request securely.">
+    <DashboardShell title="Deposit" subtitle="Add funds to your account.">
       <div className="mx-auto max-w-4xl rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
         <div className="rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--primary-gold)]/10 px-5 py-4">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Cryptocurrency automatic gateway</p>
-          <h2 className="mt-2 text-2xl font-semibold text-[var(--text-white)]">Fast, secure, and easy payments</h2>
+          <h2 className="mt-2 text-2xl font-semibold text-[var(--text-white)]">Funding methods</h2>
         </div>
 
         <div className="mt-6 rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)]/70 p-5">
-          <p className="text-sm text-slate-300">Select a payment method and submit a funding request through the designated gateway. Minimums are enforced for account security and processing compliance.</p>
+          <p className="text-sm text-slate-300">Choose a funding method and enter the amount.</p>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-300">
-            <li>Enter the USD amount you intend to deposit.</li>
-            <li>Cryptocurrency deposits require a minimum of $50.00.</li>
-            <li>Bank transfers require a minimum of $100.00.</li>
-            <li>Select the payment method and continue to its designated instructions.</li>
-            <li>Submit confirmation only after sending the exact amount.</li>
+            <li>Minimum crypto deposit: $50.00.</li>
+            <li>Minimum bank deposit: $100.00.</li>
+            <li>Payment details are shown after selection.</li>
           </ol>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="mb-2 block text-sm text-slate-300">Amount (USD)</label>
+            <label className="mb-2 block text-sm text-slate-300">Amount ({gateway === 'bank' ? bankCurrency : 'USD'})</label>
             <div className="flex items-center rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3">
-              <span className="mr-2 text-[color:var(--primary-gold)]">$</span>
+              <span className="mr-2 text-[color:var(--primary-gold)]">{gateway === 'bank' && bankCurrency === 'BRL' ? 'R$' : '$'}</span>
               <input
                 type="number"
                 min={minimumAmount}
@@ -78,6 +78,22 @@ export default function DepositPage() {
               />
             </div>
             <p className="mt-2 text-sm text-slate-400">Minimum required for {gateway === 'bank' ? 'bank transfers' : 'cryptocurrency'}: ${minimumAmount}.00</p>
+          </div>
+
+          <div>
+            {gateway === 'bank' ? (
+              <>
+                <label className="mb-2 block text-sm text-slate-300">Bank transfer currency</label>
+                <select
+                  value={bankCurrency}
+                  onChange={(event) => setBankCurrency(event.target.value)}
+                  className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-[var(--text-white)] outline-none"
+                >
+                  <option value="USD">USD - US Dollar</option>
+                  <option value="BRL">BRL - Brazilian Real</option>
+                </select>
+              </>
+            ) : null}
           </div>
 
           <div>

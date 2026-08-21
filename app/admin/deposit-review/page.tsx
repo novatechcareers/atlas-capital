@@ -122,7 +122,7 @@ export default function AdminDepositReviewPage() {
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Deposit queue</p>
               <div className="mt-2 flex items-center gap-3">
                 <h2 className="text-2xl font-semibold text-[var(--text-white)]">{selectedUser ? `${selectedUser.firstName} ${selectedUser.lastName}'s deposits` : 'Pending deposit confirmations'}</h2>
-                <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Choose user</Link>
+                <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Select account</Link>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">

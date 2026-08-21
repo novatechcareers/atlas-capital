@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AdminShell } from '@/components/admin-shell';
 import { getScopedStorageKey, getSelectedAdminUser, getSelectedAdminUserId } from '@/lib/auth';
@@ -21,6 +21,13 @@ function formatTimeAgo(timestamp: number) {
   return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
 }
 
+const coinOptions = [
+  { value: 'BTC', gateway: 'btc', label: 'Bitcoin (BTC)' },
+  { value: 'USDT', gateway: 'usdt', label: 'USDT' },
+  { value: 'SOL', gateway: 'solana', label: 'Solana (SOL)' },
+  { value: 'ETH', gateway: 'ethereum', label: 'Ethereum (ETH)' },
+];
+
 export default function AdminDepositPage() {
   const { language } = useLanguage();
   const tr = (text: string) => translatePageText(language, text);
@@ -31,6 +38,12 @@ export default function AdminDepositPage() {
   const [bankName, setBankName] = useState('');
   const [accountName, setAccountName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
+  const [hasSavedAccount, setHasSavedAccount] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
+  const formDirtyRef = useRef(false);
+  const isCoin = coinOptions.some((option) => option.value === currency);
+  const selectedCoin = coinOptions.find((option) => option.value === currency);
+  const requestGateway = isCoin ? selectedCoin?.gateway : 'bank';
   const [assigned, setAssigned] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [requestPending, setRequestPending] = useState(false);
@@ -89,9 +102,11 @@ export default function AdminDepositPage() {
 
   useEffect(() => {
     if (!selectedUserId) {
+      formDirtyRef.current = false;
       setBankName('');
       setAccountName('');
       setAccountNumber('');
+      setHasSavedAccount(false);
       setRequestPending(false);
       setRequestMeta(null);
       return;
@@ -108,9 +123,12 @@ export default function AdminDepositPage() {
 
         const account = accountResult?.bankAccount ?? null;
         const hasAssignedAccount = Boolean(account);
-        setBankName(account?.bank_name ?? '');
-        setAccountName(account?.account_name ?? '');
-        setAccountNumber(account?.account_number ?? '');
+        setHasSavedAccount(hasAssignedAccount);
+        if (!formDirtyRef.current) {
+          setBankName(account?.bank_name ?? '');
+          setAccountName(account?.account_name ?? '');
+          setAccountNumber(account?.account_number ?? '');
+        }
 
         const requestResponse = await fetch(`/api/deposit-requests?userId=${encodeURIComponent(userId)}`);
         const requestResult = await requestResponse.json();
@@ -121,7 +139,7 @@ export default function AdminDepositPage() {
         const pendingRequest = hasAssignedAccount
           ? null
           : (Array.isArray(requestResult?.deposits) ? requestResult.deposits : []).find(
-              (entry: any) => entry.gateway === 'bank' && entry.currency === currency && (entry.status === 'Pending' || entry.status === 'Confirmed'),
+              (entry: any) => entry.gateway === requestGateway && entry.currency === currency && (entry.status === 'Pending' || entry.status === 'Confirmed'),
             );
 
         setRequestPending(Boolean(pendingRequest));
@@ -131,9 +149,12 @@ export default function AdminDepositPage() {
             : null,
         );
       } catch {
-        setBankName('');
-        setAccountName('');
-        setAccountNumber('');
+        if (!formDirtyRef.current) {
+          setBankName('');
+          setAccountName('');
+          setAccountNumber('');
+        }
+        setHasSavedAccount(false);
         setRequestPending(false);
         setRequestMeta(null);
       }
@@ -146,7 +167,7 @@ export default function AdminDepositPage() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedUserId || !selectedUser || !bankName || !accountName || !accountNumber) return;
+    if (!selectedUserId || !selectedUser || !accountNumber || (!isCoin && (!bankName || !accountName))) return;
     setIsSubmitting(true);
 
     try {
@@ -156,8 +177,9 @@ export default function AdminDepositPage() {
         body: JSON.stringify({
           userId: selectedUserId,
           currency,
-          bankName,
-          accountName,
+          gateway: requestGateway,
+          bankName: isCoin ? currency : bankName,
+          accountName: isCoin ? 'Deposit address' : accountName,
           accountNumber,
         }),
       });
@@ -168,6 +190,8 @@ export default function AdminDepositPage() {
       }
 
       setAssigned(true);
+      formDirtyRef.current = false;
+      setHasSavedAccount(true);
       setRequestPending(false);
       setRequestMeta(null);
     } catch {
@@ -177,14 +201,33 @@ export default function AdminDepositPage() {
     }
   };
 
+  const handleRemoveAccount = async () => {
+    if (!selectedUserId || !hasSavedAccount || isRemoving) return;
+    setIsRemoving(true);
+    try {
+      const response = await fetch(`/api/bank-accounts?userId=${encodeURIComponent(selectedUserId)}&currency=${encodeURIComponent(currency)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Unable to remove saved account.');
+      formDirtyRef.current = false;
+      setBankName('');
+      setAccountName('');
+      setAccountNumber('');
+      setHasSavedAccount(false);
+      setAssigned(false);
+    } catch {
+      setAssigned(false);
+    } finally {
+      setIsRemoving(false);
+    }
+  };
+
   return (
-    <AdminShell title="Admin Deposit" subtitle="Manage premium bank account assignments for deposits.">
+    <AdminShell title="Deposit Accounts" subtitle="Funding account assignments.">
       <div className="mx-auto max-w-3xl rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
         <div className="rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--primary-gold)]/10 px-5 py-4">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Admin Deposit</p>
           <div className="mt-2 flex items-center gap-3">
-            <h2 className="text-2xl font-semibold text-[var(--text-white)]">Assign {currency} Bank Account</h2>
-            <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Choose user</Link>
+            <h2 className="text-2xl font-semibold text-[var(--text-white)]">Assign {isCoin ? `${selectedCoin?.label} address` : `${currency} Bank Account`}</h2>
+            <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Select account</Link>
           </div>
         </div>
 
@@ -192,7 +235,7 @@ export default function AdminDepositPage() {
           {requestPending ? (
             <>
               <p className="font-semibold text-[color:var(--primary-gold)]">{tr('Pending request detected')}</p>
-              <p className="mt-2">User requested {formatCurrency(currency, requestMeta?.amount ?? '0')}.</p>
+              <p className="mt-2">User requested a {isCoin ? `${currency} deposit` : `${currency} bank transfer`} of {formatCurrency(isCoin ? 'USD' : currency, requestMeta?.amount ?? '0')}.</p>
               {requestMeta ? <p className="mt-1 text-[color:var(--text-secondary)]">Requested {formatTimeAgo(requestMeta.requestedAt)}.</p> : null}
             </>
           ) : (
@@ -210,42 +253,43 @@ export default function AdminDepositPage() {
             >
               <option value="USD">USD - US Dollar</option>
               <option value="BRL">BRL - Brazilian Reals</option>
+              {coinOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </div>
 
-          <div>
+          {!isCoin ? <div>
             <label className="mb-2 block text-sm text-slate-300">{tr('Bank name')}</label>
             <input
               value={bankName}
-              onChange={(event) => setBankName(event.target.value)}
+              onChange={(event) => { formDirtyRef.current = true; setBankName(event.target.value); }}
               className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-[var(--text-white)] outline-none"
               placeholder={tr('Enter bank name')}
             />
-          </div>
+          </div> : null}
 
-          <div>
+          {!isCoin ? <div>
               <label className="mb-2 block text-sm text-slate-300">{tr('Account holder name')}</label>
             <input
               value={accountName}
-              onChange={(event) => setAccountName(event.target.value)}
+              onChange={(event) => { formDirtyRef.current = true; setAccountName(event.target.value); }}
               className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-[var(--text-white)] outline-none"
               placeholder={tr('Enter account holder name')}
             />
-          </div>
+          </div> : null}
 
           <div>
-            <label className="mb-2 block text-sm text-slate-300">Account number</label>
+            <label className="mb-2 block text-sm text-slate-300">{isCoin ? `${selectedCoin?.label} address` : 'Account number'}</label>
             <input
               value={accountNumber}
-              onChange={(event) => setAccountNumber(event.target.value)}
+              onChange={(event) => { formDirtyRef.current = true; setAccountNumber(event.target.value); }}
               className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-[var(--text-white)] outline-none"
-              placeholder={tr('Enter admin bank account number')}
+              placeholder={isCoin ? `Enter ${selectedCoin?.label} address` : tr('Enter admin bank account number')}
             />
           </div>
 
           <button
             type="submit"
-            disabled={!selectedUserId || !selectedUser || !bankName || !accountName || !accountNumber || isSubmitting}
+            disabled={!selectedUserId || !selectedUser || !accountNumber || (!isCoin && (!bankName || !accountName)) || isSubmitting}
             className="w-full rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? 'Saving account…' : tr('Save bank account')}
@@ -253,6 +297,16 @@ export default function AdminDepositPage() {
 
           {assigned ? (
             <p className="text-sm text-emerald-300">{tr('Account saved and ready for deposit users.')}</p>
+          ) : null}
+          {hasSavedAccount ? (
+            <button
+              type="button"
+              onClick={handleRemoveAccount}
+              disabled={isRemoving || isSubmitting}
+              className="w-full rounded-2xl border border-rose-400/40 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isRemoving ? 'Removing account...' : 'Remove saved account'}
+            </button>
           ) : null}
         </form>
       </div>

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { DashboardShell } from '@/components/dashboard-shell';
 import { getCurrentAccountId, getUserStorageKey } from '@/lib/auth';
 import { canAfford, formatCurrency, getStoredBalance, subscribeToBalance } from '@/lib/balance';
+import { BANK_MINIMUM_WITHDRAWAL, MAX_SELF_SERVICE_WITHDRAWAL, WITHDRAWAL_ADMIN_EMAIL } from '@/lib/withdrawal';
 
 type WithdrawalRequest = {
   id: number;
@@ -28,6 +29,12 @@ export default function BankWithdrawalPage() {
   const [accountNumber, setAccountNumber] = useState('');
   const [balance, setBalance] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
+  const [showAdminContact, setShowAdminContact] = useState(false);
+
+  useEffect(() => {
+    const requestedAmount = new URLSearchParams(window.location.search).get('amount');
+    if (requestedAmount && !amount) setAmount(requestedAmount);
+  }, [amount]);
 
   useEffect(() => {
     setBalance(getStoredBalance());
@@ -36,15 +43,20 @@ export default function BankWithdrawalPage() {
   }, []);
 
   const numericAmount = Number(amount);
-  const belowMinimum = Boolean(amount && numericAmount < 750);
-  const canSubmit = Boolean(amount && numericAmount >= 750 && bankName && accountName && accountNumber);
+  const belowMinimum = Boolean(amount && numericAmount < BANK_MINIMUM_WITHDRAWAL);
+  const canSubmit = Boolean(amount && numericAmount >= BANK_MINIMUM_WITHDRAWAL && bankName && accountName && accountNumber);
   const insufficientBalance = Boolean(amount && numericAmount > 0 && !canAfford(numericAmount));
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
 
     if (belowMinimum) {
-      setMessage('The minimum bank withdrawal is $750.00. Please enter a qualifying amount to continue.');
+      setMessage('The minimum bank withdrawal is $1,500.00. Please enter a qualifying amount to continue.');
+      return;
+    }
+
+    if (numericAmount > MAX_SELF_SERVICE_WITHDRAWAL) {
+      setShowAdminContact(true);
       return;
     }
 
@@ -99,30 +111,8 @@ export default function BankWithdrawalPage() {
         return;
       }
     } catch {
-      // Fallback to local storage only if the server is unavailable, but the server path above is authoritative when available.
+      setMessage('Unable to connect to the withdrawal service. Please try again.');
     }
-
-    const stored = window.localStorage.getItem(getUserStorageKey(storageKey));
-    const requests: WithdrawalRequest[] = stored ? JSON.parse(stored) : [];
-    const nextRequest: WithdrawalRequest = {
-      id: Date.now(),
-      amount: numericAmount,
-      method: 'bank',
-      status: 'Fee pending',
-      bankName,
-      accountName,
-      accountNumber,
-    };
-
-    const nextRequests = [nextRequest, ...requests];
-    window.localStorage.setItem(getUserStorageKey(storageKey), JSON.stringify(nextRequests));
-    window.localStorage.setItem(getUserStorageKey('atlas-withdrawal-last-action'), JSON.stringify({ type: 'bank-request', request: nextRequest }));
-
-    const channel = new BroadcastChannel('atlas-withdrawal-requests');
-    channel.postMessage({ type: 'requests-updated', requests: nextRequests, userId });
-    channel.close();
-
-    router.push(`/dashboard/withdrawal/fee?requestId=${nextRequest.id}`);
   };
 
   const balanceLabel = useMemo(() => formatCurrency(balance), [balance]);
@@ -133,7 +123,7 @@ export default function BankWithdrawalPage() {
         <div className="rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--primary-gold)]/10 px-5 py-4">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Bank transfer</p>
           <h2 className="mt-2 text-2xl font-semibold text-[var(--text-white)]">Provide account details</h2>
-          <p className="mt-3 text-sm text-slate-300">Bank withdrawals require a minimum amount of $750.00 and may be subject to international transfer charges before release.</p>
+          <p className="mt-3 text-sm text-slate-300">Bank withdrawals require a minimum amount of $1,500.00. Amounts above $4,000 require administrator assistance.</p>
         </div>
 
         <div className="mt-4 rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--surface)]/10 p-4 text-sm text-slate-300">
@@ -150,7 +140,7 @@ export default function BankWithdrawalPage() {
               placeholder="Enter amount"
               inputMode="decimal"
             />
-            <p className="mt-2 text-sm text-slate-400">Minimum bank withdrawal: $750.00</p>
+            <p className="mt-2 text-sm text-slate-400">Minimum bank withdrawal: $1,500.00</p>
           </div>
 
           <div>
@@ -204,6 +194,18 @@ export default function BankWithdrawalPage() {
           </div>
         </div>
       </div>
+      {showAdminContact ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-[color:var(--primary-gold)]/30 bg-[color:var(--surface)] p-7 shadow-2xl">
+            <h2 className="text-2xl font-semibold text-[var(--text-primary)]">Contact administration</h2>
+            <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Withdrawals above $4,000 cannot continue through self-service. Contact administration for assistance with this request.</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a href={`mailto:${WITHDRAWAL_ADMIN_EMAIL}?subject=Withdrawal%20assistance%20request`} className="rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)]">Email admin</a>
+              <button type="button" onClick={() => setShowAdminContact(false)} className="rounded-2xl border border-[color:var(--border-soft)] px-4 py-3 text-sm text-[var(--text-primary)]">Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </DashboardShell>
   );
 }

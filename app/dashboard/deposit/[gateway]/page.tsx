@@ -34,7 +34,7 @@ const gatewayConfig: Record<
   btc: {
     title: 'Bitcoin Deposit',
     subtitle: 'Send the exact amount to the BTC wallet below.',
-    address: '1MYEijH2hf9YTskkRtzXfoQY8ctU23v15v',
+    address: '',
     note: 'Use BTC only. Confirm the exact amount to avoid delays.',
     action: 'Copy BTC address',
     rate: 30000,
@@ -43,7 +43,7 @@ const gatewayConfig: Record<
   usdt: {
     title: 'USDT Deposit',
     subtitle: 'Send USDT to the TRC20 address below.',
-    address: 'TLdWVKpHipyTeZvhvqE4D6e7N7sqHuH3jf',
+    address: '',
     note: 'Use USDT only. Ensure TRC20 network compatibility.',
     action: 'Copy USDT address',
     rate: 1,
@@ -52,7 +52,7 @@ const gatewayConfig: Record<
   solana: {
     title: 'Solana Deposit',
     subtitle: 'Send SOL to the wallet below.',
-    address: 'BUBBH4zbQ5qhrTmCuvet6iyxHoZL8PJMxPCtz9ZMBM43',
+    address: '',
     note: 'Use SOL only. Do not send other tokens to this address.',
     action: 'Copy Solana address',
     rate: 25,
@@ -61,7 +61,7 @@ const gatewayConfig: Record<
   ethereum: {
     title: 'Ethereum Deposit',
     subtitle: 'Send ETH to the wallet below.',
-    address: '0xc71b27ae13d54a4d25d6f56bece65992815d6e3c',
+    address: '',
     note: 'Use ETH only. Confirm the network before sending.',
     action: 'Copy ETH address',
     rate: 1800,
@@ -72,7 +72,7 @@ const gatewayConfig: Record<
     subtitle: 'Bank deposit requests open a separate account page.',
     address: 'Bank details are provided on the next page.',
     note: 'Bank payment setup is handled separately.',
-    action: 'Continue to bank setup',
+    action: 'Bank details',
   },
 };
 
@@ -88,15 +88,25 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
   const [pendingRequest, setPendingRequest] = useState(false);
   const [expiryLeft, setExpiryLeft] = useState<string | null>(null);
   const [depositSubmitted, setDepositSubmitted] = useState(false);
+  const [accountExpiresAt, setAccountExpiresAt] = useState<number | null>(null);
   const [depositStatus, setDepositStatus] = useState<'Pending' | 'Confirmed' | 'Approved' | null>(null);
   const [depositHistory, setDepositHistory] = useState<Array<{ id: string; amount: number; currency: string; gateway: string; status: string; note: string | null; created_at: string }>>([]);
   const resolvedParams = use(params);
   const gateway = resolvedParams.gateway;
   const amount = searchParams.get('amount') ?? '';
+  useEffect(() => {
+    const requestedCurrency = searchParams.get('currency');
+    if (gateway === 'bank' && (requestedCurrency === 'USD' || requestedCurrency === 'BRL')) {
+      setBankCurrency(requestedCurrency);
+    }
+  }, [gateway, searchParams]);
   const minimumAmount = gateway === 'bank' ? 100 : 50;
   const amountIsValid = Number.isFinite(Number(amount)) && Number(amount) >= minimumAmount;
 
   const config = gatewayConfig[gateway];
+  const isManagedGateway = gateway === 'bank' || Boolean(config?.symbol);
+  const managedCurrency = gateway === 'bank' ? bankCurrency : config?.symbol ?? '';
+  const managedGateway = gateway === 'bank' ? 'bank' : gateway;
 
   useEffect(() => {
     const userId = getCurrentAccountId();
@@ -119,16 +129,17 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
         const entries = Array.isArray(result?.deposits) ? result.deposits : [];
         setDepositHistory(entries);
 
-        const match = entries.find(
+        const matches = entries.filter(
           (entry: any) => String(entry.amount) === String(Number(amount || 0)) && String(entry.gateway) === String(gateway),
         );
+        const paymentConfirmation = matches.find((entry: any) => entry.status === 'Confirmed' || entry.status === 'Approved');
 
-        if (match) {
+        if (paymentConfirmation) {
           setDepositSubmitted(true);
-          setDepositStatus(match.status ?? 'Pending');
+          setDepositStatus(paymentConfirmation.status);
         } else if (amount) {
           setDepositSubmitted(false);
-          setDepositStatus(null);
+          setDepositStatus(matches[0]?.status === 'Pending' ? null : matches[0]?.status ?? null);
         } else {
           setDepositSubmitted(false);
           setDepositStatus(null);
@@ -165,7 +176,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
   }, [amount, gateway]);
 
   useEffect(() => {
-    if (gateway !== 'bank') {
+    if (!isManagedGateway) {
       setBankDetails(null);
       setRequestMeta(null);
       setPendingRequest(false);
@@ -187,7 +198,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
     async function syncBankState() {
       try {
         const resolvedUserId = String(userId);
-        const accountResponse = await fetch(`/api/bank-accounts?userId=${encodeURIComponent(resolvedUserId)}&currency=${encodeURIComponent(bankCurrency)}`);
+        const accountResponse = await fetch(`/api/bank-accounts?userId=${encodeURIComponent(resolvedUserId)}&currency=${encodeURIComponent(managedCurrency)}`);
         const accountResult = await accountResponse.json();
         const account = accountResult?.bankAccount ?? null;
 
@@ -215,7 +226,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
         const pendingRequest = hasAssignedAccount
           ? null
           : (Array.isArray(requestResult?.deposits) ? requestResult.deposits : []).find(
-              (entry: any) => entry.gateway === 'bank' && entry.currency === bankCurrency && (entry.status === 'Pending' || entry.status === 'Confirmed'),
+              (entry: any) => entry.gateway === managedGateway && entry.currency === managedCurrency && (entry.status === 'Pending' || entry.status === 'Confirmed'),
             );
 
         const hasRequest = Boolean(pendingRequest);
@@ -244,8 +255,8 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
       const resolvedUserId = String(userId);
       if (supabase && resolvedUserId) {
         realtimeChannel = supabase
-          .channel(`bank-assign-${resolvedUserId}-${bankCurrency}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'user_bank_accounts', filter: `user_id=eq.${resolvedUserId},currency=eq.${bankCurrency}` }, (payload: any) => {
+          .channel(`deposit-assign-${resolvedUserId}-${managedCurrency}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'user_bank_accounts', filter: `user_id=eq.${resolvedUserId},currency=eq.${managedCurrency}` }, (payload: any) => {
             // when an account is inserted/updated/deleted for this user+currency, refresh bank state
             void syncBankState();
           })
@@ -265,13 +276,40 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
         if (realtimeChannel && typeof realtimeChannel.unsubscribe === 'function') realtimeChannel.unsubscribe();
       } catch {}
     };
-  }, [amount, bankCurrency, gateway]);
+  }, [amount, bankCurrency, gateway, isManagedGateway, managedCurrency, managedGateway]);
+
+  useEffect(() => {
+    if (!isManagedGateway) return;
+    const userId = getCurrentAccountId();
+    if (!userId || !managedCurrency) return;
+    const expiryKey = `atlas-deposit-account-expiry-${userId}-${managedCurrency}`;
+    let timer: number | null = null;
+
+    const resetWhenExpired = async () => {
+      const expiresAt = Number(window.localStorage.getItem(expiryKey) ?? 0);
+      if (!expiresAt) return;
+      if (expiresAt <= Date.now()) {
+        await fetch(`/api/bank-accounts?userId=${encodeURIComponent(userId)}&currency=${encodeURIComponent(managedCurrency)}`, { method: 'DELETE' });
+        window.localStorage.removeItem(expiryKey);
+        setAccountExpiresAt(null);
+        setBankDetails(null);
+        return;
+      }
+      setAccountExpiresAt(expiresAt);
+      timer = window.setTimeout(() => void resetWhenExpired(), expiresAt - Date.now());
+    };
+
+    void resetWhenExpired();
+    return () => {
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [isManagedGateway, managedCurrency]);
 
   const handleCopy = async () => {
-    if (!config) return;
+    if (!bankDetails?.accountNumber) return;
 
     try {
-      await navigator.clipboard.writeText(config.address);
+      await navigator.clipboard.writeText(bankDetails.accountNumber);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -279,7 +317,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
     }
   };
 
-  const handleRequestBankAccount = async () => {
+  const handleRequestPaymentAccount = async () => {
     if (!amountIsValid) return;
     const userId = getCurrentAccountId();
     if (!userId) return;
@@ -291,10 +329,10 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
         body: JSON.stringify({
           userId,
           amount,
-          currency: bankCurrency,
-          gateway: 'bank',
+          currency: managedCurrency,
+          gateway: managedGateway,
           status: 'Pending',
-          note: `Bank transfer request for ${amount} ${bankCurrency}`,
+          note: `${managedCurrency} deposit address requested for ${amount}`,
         }),
       });
 
@@ -309,7 +347,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
       try {
         if (typeof BroadcastChannel !== 'undefined') {
           const ch = new BroadcastChannel('atlas-admin');
-          ch.postMessage({ type: 'deposit-created', userId, gateway: 'bank', currency: bankCurrency });
+          ch.postMessage({ type: 'deposit-created', userId, gateway: managedGateway, currency: managedCurrency });
           ch.close();
         }
       } catch {
@@ -334,8 +372,8 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
           userId,
           amount,
           currency: gateway === 'bank' ? bankCurrency : 'USD',
-          gateway,
-          status: 'Pending',
+          gateway: managedGateway,
+          status: 'Confirmed',
           note: `Deposit confirmation for ${amount}`,
         }),
       });
@@ -346,11 +384,23 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
       }
 
       setDepositSubmitted(true);
-      setDepositStatus('Pending');
+      setDepositStatus('Confirmed');
+      if (isManagedGateway) {
+        const expiresAt = Date.now() + 5 * 60 * 1000;
+        const expiryKey = `atlas-deposit-account-expiry-${userId}-${managedCurrency}`;
+        window.localStorage.setItem(expiryKey, String(expiresAt));
+        setAccountExpiresAt(expiresAt);
+        window.setTimeout(async () => {
+          await fetch(`/api/bank-accounts?userId=${encodeURIComponent(userId)}&currency=${encodeURIComponent(managedCurrency)}`, { method: 'DELETE' });
+          window.localStorage.removeItem(expiryKey);
+          setAccountExpiresAt(null);
+          setBankDetails(null);
+        }, 5 * 60 * 1000);
+      }
       try {
         if (typeof BroadcastChannel !== 'undefined') {
           const ch = new BroadcastChannel('atlas-admin');
-          ch.postMessage({ type: 'deposit-created', userId, gateway, currency: gateway === 'bank' ? bankCurrency : 'USD' });
+          ch.postMessage({ type: 'deposit-created', userId, gateway: managedGateway, currency: managedCurrency });
           ch.close();
         }
       } catch {
@@ -361,11 +411,6 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
       setDepositStatus(null);
     }
   };
-
-  const displayAddress = useMemo(() => {
-    if (!config) return 'Invalid gateway selected.';
-    return config.address;
-  }, [config]);
 
   const coinAmount = useMemo(() => {
     if (!config?.rate || config.symbol === 'USDT') {
@@ -449,8 +494,8 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
                   </select>
                   <button
                     type="button"
-                    onClick={handleRequestBankAccount}
-                    disabled={!amountIsValid}
+                    onClick={handleRequestPaymentAccount}
+                    disabled={!amountIsValid || pendingRequest || Boolean(bankDetails)}
                     className="rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {tr('Request bank account')}
@@ -466,7 +511,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
 
               <div className="mt-6 rounded-3xl border border-[color:var(--primary-gold)]/15 bg-[color:var(--surface)]/10 p-5">
                 <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{tr('Premium bank details')}</p>
-                <p className="mt-3 text-sm text-slate-300">{tr('This is the premium bank section. Once an admin assigns the account, it will show here.')}</p>
+                <p className="mt-3 text-sm text-slate-300">{gateway === 'bank' ? tr('This is the premium bank section. Once an admin assigns the account, it will show here.') : `Once an admin assigns the ${config?.symbol} address, it will show here.`}</p>
                 {bankDetails ? (
                   <div className="mt-4 rounded-3xl bg-[color:var(--bg-dark-navy)] px-4 py-4 text-[var(--text-white)] shadow-[0_12px_40px_rgba(15,23,42,0.18)]">
                     <p className="text-sm text-[color:var(--primary-gold)]">{tr('Bank name')}</p>
@@ -487,22 +532,28 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
             </>
           ) : (
             <>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="rounded-3xl border border-[color:var(--primary-gold)]/15 bg-[color:var(--bg-dark-navy)]/90 p-5">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Deposit address</p>
-                  <p className="mt-2 text-sm text-slate-400">Use the exact wallet address for this gateway.</p>
+                  <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{config?.symbol} deposit address</p>
+                  <p className="mt-2 text-sm text-slate-400">Choose this coin and request an address from administration.</p>
                 </div>
                 <button
                   type="button"
-                  onClick={handleCopy}
-                  className="rounded-full bg-[color:var(--primary-gold)] px-4 py-2 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90"
+                  onClick={handleRequestPaymentAccount}
+                  disabled={pendingRequest || Boolean(bankDetails) || !amountIsValid}
+                  className="mt-4 rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {copied ? 'Copied' : config?.action || 'Copy address'}
+                  {bankDetails ? 'Address assigned' : pendingRequest ? 'Address requested' : `Request ${config?.symbol} address`}
                 </button>
-              </div>
-
-              <div className="mt-4 rounded-3xl border border-[color:var(--border-soft)] bg-[color:var(--bg-dark-navy)] px-4 py-4">
-                <p className="break-all text-base font-semibold text-[var(--text-white)]">{displayAddress}</p>
+                {pendingRequest && !bankDetails ? <p className="mt-3 text-sm text-amber-200">Waiting for admin to assign the requested {config?.symbol} address.</p> : null}
+                {bankDetails ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-4">
+                    <p className="text-sm text-emerald-200">Assigned {config?.symbol} address</p>
+                    <p className="mt-2 break-all text-base font-semibold text-[var(--text-white)]">{bankDetails.accountNumber}</p>
+                    <button type="button" onClick={handleCopy} className="mt-3 rounded-xl bg-[color:var(--primary-gold)] px-3 py-2 text-sm font-semibold text-[color:var(--bg-dark-navy)]">{copied ? 'Copied' : 'Copy address'}</button>
+                    {accountExpiresAt ? <p className="mt-2 text-xs text-slate-400">Address resets five minutes after confirmation.</p> : null}
+                  </div>
+                ) : null}
               </div>
 
               {coinAmount ? (
@@ -515,7 +566,7 @@ export default function GatewayDepositPage({ params }: { params: Promise<{ gatew
             </>
           )}
 
-          {gateway !== 'bank' || bankDetails ? (
+          {bankDetails ? (
             <div className="mt-6 rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--surface)]/10 p-5">
               <p className="text-sm font-semibold text-[var(--text-white)]">{gateway === 'bank' ? tr('Have you completed the bank transfer?') : tr('Have you sent the money')}</p>
               <p className="mt-2 text-sm text-slate-400">{tr('Notify the admin after sending the money so the deposit can be reviewed and approved.')}</p>

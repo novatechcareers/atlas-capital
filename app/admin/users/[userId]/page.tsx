@@ -41,9 +41,9 @@ export default function AdminUserDetailPage() {
 
   if (loading) {
     return (
-      <AdminShell title="User account" subtitle="Loading account details.">
+      <AdminShell title="Account details" subtitle="Account profile and access.">
         <div className="mx-auto max-w-3xl rounded-3xl border border-slate-700 bg-[rgba(4,16,33,0.94)] p-8 text-slate-300">
-          Loading account details from database...
+          Loading account details...
         </div>
       </AdminShell>
     );
@@ -79,7 +79,7 @@ export default function AdminUserDetailPage() {
   };
 
   return (
-    <AdminShell title="User account" subtitle="Review and manage the selected registration.">
+    <AdminShell title="Account details" subtitle="Account profile and access.">
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

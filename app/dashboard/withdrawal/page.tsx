@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { DashboardShell } from '@/components/dashboard-shell';
 import { getUserStorageKey, getCurrentAccountId } from '@/lib/auth';
 import { canAfford, formatCurrency, getStoredBalance, subscribeToBalance } from '@/lib/balance';
+import { DIGITAL_ASSET_MINIMUM_WITHDRAWAL, BANK_MINIMUM_WITHDRAWAL, MAX_SELF_SERVICE_WITHDRAWAL, WITHDRAWAL_ADMIN_EMAIL } from '@/lib/withdrawal';
 
 const coinOptions = [
   { value: 'bitcoin', label: 'Bitcoin', placeholder: 'Enter BTC wallet address' },
@@ -24,6 +25,7 @@ export default function WithdrawalPage() {
   const [balance, setBalance] = useState(0);
   const [requests, setRequests] = useState<Array<{ id: number; amount: number; method: string; status: 'Fee pending' | 'Pending' | 'Approved' | 'Declined'; walletAddress?: string }>>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [showAdminContact, setShowAdminContact] = useState(false);
 
   useEffect(() => {
     setBalance(getStoredBalance());
@@ -86,10 +88,9 @@ export default function WithdrawalPage() {
   const selectedCoin = coinOptions.find((option) => option.value === withdrawalMethod);
   const isCoinMethod = Boolean(selectedCoin);
   const requestedAmount = Number(amount);
-  const minimumWithdrawal = withdrawalMethod === 'bank' ? 750 : 1000;
+  const minimumWithdrawal = withdrawalMethod === 'bank' ? BANK_MINIMUM_WITHDRAWAL : DIGITAL_ASSET_MINIMUM_WITHDRAWAL;
   const belowMinimum = Boolean(amount && requestedAmount < minimumWithdrawal);
   const canSubmit = Boolean(amount && Number(amount) > 0 && withdrawalMethod && (!isCoinMethod || walletAddress.trim()));
-  const insufficientBalance = Boolean(amount && Number(amount) > 0 && !canAfford(requestedAmount));
   const statusCount = useMemo(() => requests.reduce<Record<string, number>>((counts, request) => {
     counts[request.status] = (counts[request.status] || 0) + 1;
     return counts;
@@ -100,6 +101,16 @@ export default function WithdrawalPage() {
 
     if (belowMinimum) {
       setMessage(`The minimum withdrawal for ${withdrawalMethod === 'bank' ? 'bank transfers' : 'digital assets'} is ${formatCurrency(minimumWithdrawal)}.`);
+      return;
+    }
+
+    if (requestedAmount > MAX_SELF_SERVICE_WITHDRAWAL) {
+      setShowAdminContact(true);
+      return;
+    }
+
+    if (withdrawalMethod === 'bank') {
+      router.push(`/dashboard/withdrawal/bank?amount=${encodeURIComponent(amount)}`);
       return;
     }
 
@@ -119,7 +130,7 @@ export default function WithdrawalPage() {
         const resp = await fetch('/api/withdrawals', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, amount: requestedAmount, currency: 'USD', method: withdrawalMethod, walletAddress: isCoinMethod ? walletAddress : undefined, status: 'Fee pending', note: 'User withdrawal request' }),
+          body: JSON.stringify({ userId, amount: requestedAmount, currency: 'USD', method: withdrawalMethod, walletAddress, status: 'Fee pending', note: 'User withdrawal request' }),
         });
 
         if (!resp.ok) {
@@ -139,27 +150,14 @@ export default function WithdrawalPage() {
           router.push(`/dashboard/withdrawal/fee?requestId=${encodeURIComponent(withdrawal.id)}`);
           return;
         }
-      } catch (e) {
-        // fallback to localStorage behavior
+      } catch {
+        setMessage('Unable to connect to the withdrawal service. Please try again.');
       }
-
-      const nextRequest = {
-        id: Date.now(),
-        amount: requestedAmount,
-        method: withdrawalMethod,
-        status: 'Fee pending' as const,
-        walletAddress: isCoinMethod ? walletAddress : undefined,
-      };
-
-      const nextRequests = [nextRequest, ...requests];
-      setRequests(nextRequests);
-      window.localStorage.setItem(getUserStorageKey('atlas-withdrawal-requests'), JSON.stringify(nextRequests));
-      router.push(`/dashboard/withdrawal/fee?requestId=${nextRequest.id}`);
     })();
   };
 
   return (
-    <DashboardShell title="Withdrawal Transaction" subtitle="Manage withdrawal requests and review the admin approval state.">
+    <DashboardShell title="Withdrawal" subtitle="Withdrawal requests and status.">
       <div className="space-y-6">
         <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -187,7 +185,7 @@ export default function WithdrawalPage() {
                   placeholder="Enter Amount"
                   inputMode="decimal"
                 />
-                <p className="mt-3 text-sm text-slate-400">Minimum withdrawal: $1,000 for digital assets and $750 for bank transfers. Requests remain subject to balance verification and administrative review.</p>
+                <p className="mt-3 text-sm text-slate-400">Minimum withdrawal: $2,000 for digital assets and $1,500 for bank transfers. Amounts above $4,000 require administrator assistance.</p>
               </div>
 
               <div className="rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--primary-gold)]/10 p-5">
@@ -313,6 +311,18 @@ export default function WithdrawalPage() {
           </div>
         </div>
       </div>
+      {showAdminContact ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-[color:var(--primary-gold)]/30 bg-[color:var(--surface)] p-7 shadow-2xl">
+            <h2 className="text-2xl font-semibold text-[var(--text-primary)]">Contact administration</h2>
+            <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Withdrawals above $4,000 cannot continue through self-service. Contact administration for assistance with this request.</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a href={`mailto:${WITHDRAWAL_ADMIN_EMAIL}?subject=Withdrawal%20assistance%20request`} className="rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)]">Email admin</a>
+              <button type="button" onClick={() => setShowAdminContact(false)} className="rounded-2xl border border-[color:var(--border-soft)] px-4 py-3 text-sm text-[var(--text-primary)]">Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </DashboardShell>
   );
 }
