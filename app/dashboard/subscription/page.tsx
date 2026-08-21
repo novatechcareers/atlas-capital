@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { DashboardShell } from '@/components/dashboard-shell';
 import { getUserStorageKey } from '@/lib/auth';
-import { canAfford, formatCurrency, getStoredBalance, subscribeToBalance, syncBalanceFromServer } from '@/lib/balance';
+import { formatCurrency, getStoredBalance, subscribeToBalance, syncBalanceFromServer } from '@/lib/balance';
 import { getActiveSubscription, saveActiveSubscription, subscribeToSubscription, syncSubscriptionFromServer, type ActiveSubscription } from '@/lib/subscription';
 
 const tiers = [
@@ -46,6 +46,7 @@ export default function SubscriptionPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [subscriptions, setSubscriptions] = useState<PurchasedSubscription[]>([]);
   const [activeSubscription, setActiveSubscription] = useState<ActiveSubscription | null>(null);
+  const [isPurchasing, setIsPurchasing] = useState(false);
 
   useEffect(() => {
     setBalance(getStoredBalance());
@@ -91,29 +92,29 @@ export default function SubscriptionPage() {
     setShowDetails(false);
   };
 
+  const currentSubscription = activeSubscription?.status === 'Rejected' ? null : activeSubscription;
+  const getAmountDue = (plan: SubscriptionTier) => currentSubscription ? plan.price - currentSubscription.price : plan.price;
+
   const handlePurchase = async (plan: SubscriptionTier) => {
-    const amountDue = activeSubscription ? plan.price - activeSubscription.price : plan.price;
-    if (activeSubscription && amountDue <= 0) {
+    if (isPurchasing) return;
+
+    const amountDue = getAmountDue(plan);
+    if (currentSubscription && amountDue <= 0) {
       setMessage({ type: 'error', text: 'This plan is not an upgrade from your current subscription.' });
       return;
     }
-    if (!canAfford(amountDue)) {
+
+    setIsPurchasing(true);
+    const serverBalance = await syncBalanceFromServer();
+    setBalance(serverBalance);
+    if (serverBalance < amountDue) {
+      setIsPurchasing(false);
       setMessage({
         type: 'error',
         text: `Insufficient balance. Please go to deposit to top up the ${formatCurrency(amountDue)} required for this subscription payment.`,
       });
       return;
     }
-
-    const now = Date.now();
-    const nextSubscription = {
-      id: now,
-      name: plan.name,
-      price: plan.price,
-      status: 'Reviewing' as const,
-      createdAt: now,
-      updatedAt: now,
-    };
 
     // Send to database and wait for it to complete
     try {
@@ -160,19 +161,22 @@ export default function SubscriptionPage() {
     } catch (err) {
       console.error('Failed to sync subscription to database:', err);
       setMessage({ type: 'error', text: 'Unable to save subscription payment. Please try again.' });
+      setIsPurchasing(false);
       return;
     }
 
-    void syncBalanceFromServer();
+    const updatedBalance = await syncBalanceFromServer();
+    setBalance(updatedBalance);
     setMessage({
       type: 'success',
-      text: activeSubscription ? 'Upgrade payment received. Your subscription is loading while the upgrade is reviewed.' : 'Payment received. Your subscription is under review and the other plans are temporarily unavailable.',
+      text: currentSubscription ? 'Upgrade payment received and under review.' : 'Payment received and under review.',
     });
     setShowDetails(false);
+    setIsPurchasing(false);
   };
 
   return (
-    <DashboardShell title="Subscription Plans" subtitle="Choose a premium tier and activate advanced trading features from your dashboard.">
+    <DashboardShell title="Subscription Plans" subtitle="Plans and account status.">
       <div className="space-y-6 relative">
         <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -195,24 +199,28 @@ export default function SubscriptionPage() {
           </div>
         ) : null}
 
-        {activeSubscription ? (
+        {activeSubscription?.status === 'Rejected' ? (
+          <div className="rounded-3xl border border-rose-400/30 bg-rose-500/10 p-6 text-sm text-rose-200">Your previous subscription was reset because the duration has ended. You can choose another plan below.</div>
+        ) : null}
+
+        {currentSubscription ? (
           <div className="grid gap-8 xl:grid-cols-[1.3fr_0.95fr]">
             <div className="rounded-3xl border border-[color:var(--primary-gold)]/30 bg-[rgba(4,16,33,0.94)] p-8 shadow-lg shadow-black/30">
               <div className="flex flex-col items-center text-center">
-                <div className={`flex h-24 w-24 items-center justify-center rounded-full border-2 border-[color:var(--primary-gold)] text-5xl text-[color:var(--primary-gold)] ${activeSubscription.status === 'Reviewing' ? 'animate-spin' : ''}`}>◈</div>
-                <p className="mt-6 text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{activeSubscription.status === 'Reviewing' ? 'Subscription loading' : 'Subscription active'}</p>
-                <h2 className="mt-3 text-3xl font-semibold text-[var(--text-white)]">{activeSubscription.name} subscription</h2>
+                <div className={`flex h-24 w-24 items-center justify-center rounded-full border-2 border-[color:var(--primary-gold)] text-5xl text-[color:var(--primary-gold)] ${currentSubscription.status === 'Reviewing' ? 'animate-spin' : ''}`}>◈</div>
+                <p className="mt-6 text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{currentSubscription.status === 'Reviewing' ? 'Subscription loading' : 'Subscription active'}</p>
+                <h2 className="mt-3 text-3xl font-semibold text-[var(--text-white)]">{currentSubscription.name} subscription</h2>
                 <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300">
-                  {activeSubscription.status === 'Reviewing' ? 'Your payment has been received and is awaiting administrative approval. Your premium features will activate once confirmed.' : 'Your subscription has been approved. Premium features are now available on your account.'}
+                  {currentSubscription.status === 'Reviewing' ? 'Payment is under review.' : 'Subscription is active.'}
                 </p>
-                <p className="mt-6 rounded-2xl bg-[color:var(--primary-gold)]/10 px-5 py-3 text-sm font-semibold text-[color:var(--primary-gold)]">{activeSubscription.status}</p>
+                <p className="mt-6 rounded-2xl bg-[color:var(--primary-gold)]/10 px-5 py-3 text-sm font-semibold text-[color:var(--primary-gold)]">{currentSubscription.status}</p>
               </div>
             </div>
             <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
               <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Upgrade options</p>
-              <p className="mt-3 text-sm text-slate-400">Choose an upgrade after your current payment has been approved.</p>
+              <p className="mt-3 text-sm text-slate-400">Available upgrades.</p>
               <div className="mt-5 space-y-3">
-                {tiers.filter((tier) => tier.price > activeSubscription.price).map((tier) => (
+                {tiers.filter((tier) => tier.price > currentSubscription.price).map((tier) => (
                   <button key={tier.name} type="button" onClick={() => handleShowDetails(tier)} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/30 bg-[color:var(--primary-gold)]/10 p-4 text-left transition hover:bg-[color:var(--primary-gold)]/20">
                     <span className="flex items-center justify-between gap-3"><span className="font-semibold text-[var(--text-white)]">{tier.name}</span><span className="text-[color:var(--primary-gold)]">{formatCurrency(tier.price)}</span></span>
                     <span className="mt-2 block text-xs text-slate-400">{tier.period}</span>
@@ -223,7 +231,7 @@ export default function SubscriptionPage() {
           </div>
         ) : null}
 
-        {!activeSubscription ? <div className="grid gap-8 xl:grid-cols-[1.3fr_0.95fr]">
+        {!currentSubscription ? <div className="grid gap-8 xl:grid-cols-[1.3fr_0.95fr]">
           <div className="grid gap-6 lg:grid-cols-3 items-stretch">
             {tiers.map((tier) => (
               <div key={tier.name} className="flex min-h-[440px] flex-col justify-between rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
@@ -266,12 +274,13 @@ export default function SubscriptionPage() {
                   <div className="mt-5 flex flex-col gap-3">
                     <button
                       type="button"
-                      onClick={() => handlePurchase(selectedPlan)}
+                      disabled={isPurchasing}
+                      onClick={() => void handlePurchase(selectedPlan)}
                       className="w-full rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90"
                     >
-                      {activeSubscription ? `Upgrade to ${selectedPlan.name}` : `Purchase ${selectedPlan.name}`}
+                      {isPurchasing ? 'Processing payment...' : currentSubscription ? `Upgrade to ${selectedPlan.name}` : `Purchase ${selectedPlan.name}`}
                     </button>
-                    {!canAfford(selectedPlan.price) ? (
+                    {balance < getAmountDue(selectedPlan) ? (
                       <Link
                         href="/dashboard/deposit"
                         className="inline-flex justify-center rounded-2xl border border-[color:var(--primary-gold)]/20 px-4 py-3 text-sm font-semibold text-[color:var(--text-white)] transition hover:bg-[color:var(--surface)]/40"
@@ -344,12 +353,13 @@ export default function SubscriptionPage() {
                   <div className="mt-6 space-y-3">
                     <button
                       type="button"
-                      onClick={() => handlePurchase(selectedPlan)}
-                      className="w-full rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90"
+                      disabled={isPurchasing}
+                      onClick={() => void handlePurchase(selectedPlan)}
+                      className="w-full rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {activeSubscription ? `Upgrade to ${selectedPlan.name}` : `Purchase ${selectedPlan.name}`}
+                      {isPurchasing ? 'Processing payment...' : currentSubscription ? `Upgrade to ${selectedPlan.name}` : `Purchase ${selectedPlan.name}`}
                     </button>
-                    {!canAfford(selectedPlan.price) ? (
+                    {balance < getAmountDue(selectedPlan) ? (
                       <Link
                         href="/dashboard/deposit"
                         className="inline-flex w-full justify-center rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm font-semibold text-[color:var(--text-white)] transition hover:bg-[color:var(--surface)]/40"

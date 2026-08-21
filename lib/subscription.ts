@@ -1,6 +1,6 @@
 import { getCurrentAccountId, getUserStorageKey } from './auth';
 
-export type SubscriptionStatus = 'Reviewing' | 'Active';
+export type SubscriptionStatus = 'Reviewing' | 'Active' | 'Rejected';
 
 export type ActiveSubscription = {
   id: string | number;
@@ -21,7 +21,7 @@ function normalizeSubscription(payload: any): ActiveSubscription | null {
     id: payload.id ?? Date.now(),
     name: payload.name ?? 'Premium',
     price: Number(payload.price ?? 0),
-    status: payload.status === 'Active' ? 'Active' : 'Reviewing',
+    status: payload.status === 'Active' || payload.status === 'Rejected' ? payload.status : 'Reviewing',
     createdAt: payload.createdAt ?? payload.created_at ? new Date(payload.created_at).getTime() : Date.now(),
     updatedAt: payload.updatedAt ?? payload.updated_at ? new Date(payload.updated_at).getTime() : Date.now(),
   };

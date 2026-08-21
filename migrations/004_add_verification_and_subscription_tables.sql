@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS public.subscriptions (
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name text NOT NULL,
   price numeric(12,2) NOT NULL CHECK (price >= 0),
-  status text NOT NULL DEFAULT 'Reviewing' CHECK (status IN ('Reviewing', 'Active')),
+  status text NOT NULL DEFAULT 'Reviewing' CHECK (status IN ('Reviewing', 'Active', 'Rejected')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );

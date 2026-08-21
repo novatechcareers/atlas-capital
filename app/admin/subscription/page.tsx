@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { AdminShell } from '@/components/admin-shell';
 import { getAccountById, getSelectedAdminUserId } from '@/lib/auth';
 import { formatCurrency } from '@/lib/balance';
-import { getActiveSubscription, subscribeToSubscription, type ActiveSubscription, updateSubscriptionStatus, syncSubscriptionFromServer } from '@/lib/subscription';
+import { subscribeToSubscription, type ActiveSubscription } from '@/lib/subscription';
 
 export default function AdminSubscriptionPage() {
   const [subscription, setSubscription] = useState<ActiveSubscription | null>(null);
@@ -55,7 +55,7 @@ export default function AdminSubscriptionPage() {
   }, [selectedUserId]);
 
   const approve = async () => {
-    if (!selectedUser || !subscription) return;
+    if (!subscription) return;
     if (isUpdating) return;
 
     setIsUpdating(true);
@@ -90,16 +90,74 @@ export default function AdminSubscriptionPage() {
     }
   };
 
+  const reject = async () => {
+    if (!subscription || isUpdating) return;
+
+    setIsUpdating(true);
+    try {
+      const res = await fetch(`/api/admin/subscriptions/${encodeURIComponent(String(subscription.id))}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Rejected' }),
+      });
+
+      if (!res.ok) {
+        setMessage('Failed to reject subscription payment.');
+        return;
+      }
+
+      const { subscription: updated } = await res.json();
+      setSubscription({
+        id: updated.id,
+        name: updated.name,
+        price: Number(updated.price),
+        status: updated.status,
+        createdAt: updated.created_at ? new Date(updated.created_at).getTime() : Date.now(),
+        updatedAt: updated.updated_at ? new Date(updated.updated_at).getTime() : Date.now(),
+      });
+      setMessage('Subscription payment rejected.');
+    } catch (err) {
+      console.error('Failed to reject subscription:', err);
+      setMessage('Failed to reject subscription payment.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const resetSubscription = async () => {
+    if (!subscription || isUpdating) return;
+
+    setIsUpdating(true);
+    try {
+      const res = await fetch(`/api/admin/subscriptions/${encodeURIComponent(String(subscription.id))}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        setMessage('Failed to reset subscription.');
+        return;
+      }
+
+      setSubscription(null);
+      setMessage('Subscription reset. The selected user can submit a new payment review.');
+    } catch (err) {
+      console.error('Failed to reset subscription:', err);
+      setMessage('Failed to reset subscription.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
-    <AdminShell title="Subscription Review" subtitle="Review the selected user’s subscription payment and approve premium access.">
+    <AdminShell title="Subscription Review" subtitle="Subscription payment queue.">
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
           <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Subscription administration</p>
           <div className="mt-2 flex items-center gap-3">
             <h2 className="text-2xl font-semibold text-[var(--text-white)]">{selectedUser ? `${selectedUser.firstName} ${selectedUser.lastName}'s payment approval queue` : 'Payment approval queue'}</h2>
-            <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Choose user</Link>
+            <Link href="/admin/users" className="ml-2 rounded-2xl bg-[color:var(--primary-gold)]/10 px-3 py-1 text-sm text-[color:var(--primary-gold)]">Select account</Link>
           </div>
-          <p className="mt-3 text-sm text-slate-400">{selectedUser ? 'Approve the payment to activate this user’s subscription and update their client page immediately.' : 'Choose a user first to review their subscription payment.'}</p>
+          <p className="mt-3 text-sm text-slate-400">{selectedUser ? 'Reviewing payment for the selected account.' : 'Select an account to view payment activity.'}</p>
         </div>
 
         {message ? <div className="rounded-3xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{message}</div> : null}
@@ -114,11 +172,19 @@ export default function AdminSubscriptionPage() {
                 <h3 className="mt-2 text-2xl font-semibold text-[var(--text-white)]">{subscription.name}</h3>
                 <p className="mt-2 text-sm text-slate-300">Payment: {formatCurrency(subscription.price)}</p>
               </div>
-              <span className={`rounded-full px-4 py-2 text-sm font-semibold ${subscription.status === 'Reviewing' ? 'bg-amber-500/15 text-amber-200' : 'bg-emerald-500/15 text-emerald-200'}`}>{subscription.status}</span>
+              <span className={`rounded-full px-4 py-2 text-sm font-semibold ${subscription.status === 'Reviewing' ? 'bg-amber-500/15 text-amber-200' : subscription.status === 'Rejected' ? 'bg-rose-500/15 text-rose-200' : 'bg-emerald-500/15 text-emerald-200'}`}>{subscription.status}</span>
             </div>
             {subscription.status === 'Reviewing' ? (
-              <button type="button" disabled={isUpdating} onClick={approve} className="mt-6 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">{isUpdating ? 'Approving...' : 'Approve subscription payment'}</button>
-            ) : <p className="mt-6 border-t border-[color:var(--border-soft)] pt-5 text-sm text-emerald-200">Payment approved and subscription active.</p>}
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button type="button" disabled={isUpdating} onClick={approve} className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">{isUpdating ? 'Updating...' : 'Approve subscription payment'}</button>
+                <button type="button" disabled={isUpdating} onClick={reject} className="rounded-2xl bg-rose-500 px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">Reject payment</button>
+              </div>
+            ) : (
+              <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-[color:var(--border-soft)] pt-5">
+                <button type="button" disabled={isUpdating} onClick={resetSubscription} className="w-full rounded-2xl border border-slate-500 bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">{isUpdating ? 'Resetting...' : 'Reset subscription'}</button>
+                {subscription.status === 'Rejected' ? <p className="text-sm text-rose-200">Payment rejected.</p> : <p className="text-sm text-emerald-200">Payment approved and subscription active.</p>}
+              </div>
+            )}
           </div>
         )}
       </div>
