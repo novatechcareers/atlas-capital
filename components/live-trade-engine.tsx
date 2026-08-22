@@ -6,6 +6,7 @@ import { adjustBalanceFromServer } from '@/lib/balance';
 import {
   addLiveTradeHistoryEntry,
   calculateLiveTradePnl,
+  fetchMarketPrice,
   getLiveTradePosition,
   getLiveTradePrice,
   setLiveTradePosition,
@@ -16,6 +17,7 @@ import {
 export function LiveTradeEngine() {
   useEffect(() => {
     let engineInterval: number | null = null;
+    let marketPriceInterval: number | null = null;
     let storageHandler: ((event: StorageEvent) => void) | null = null;
     let started = false;
 
@@ -23,11 +25,9 @@ export function LiveTradeEngine() {
       if (!userId || started) return;
       started = true;
 
-      const syncPrice = () => {
-        const current = getLiveTradePrice();
-        const shock = (Math.random() * 0.0016 - 0.0008) + (Math.random() < 0.58 ? -0.0001 : 0.0001);
-        const next = Math.max(1000, Number((current * (1 + shock)).toFixed(2)) || current);
-        setLiveTradePrice(next);
+      const syncMarketPrice = async () => {
+        const marketPrice = await fetchMarketPrice();
+        if (marketPrice > 0) setLiveTradePrice(marketPrice);
       };
 
       const updatePosition = () => {
@@ -70,9 +70,14 @@ export function LiveTradeEngine() {
       };
 
       engineInterval = window.setInterval(() => {
-        syncPrice();
         updatePosition();
       }, 2500) as unknown as number;
+
+      marketPriceInterval = window.setInterval(() => {
+        void syncMarketPrice();
+      }, 15_000) as unknown as number;
+
+      void syncMarketPrice();
 
       storageHandler = () => {
         const position = getLiveTradePosition(userId);
@@ -85,23 +90,10 @@ export function LiveTradeEngine() {
       window.addEventListener('storage', storageHandler);
     };
 
-    // Try to start immediately if a session exists, otherwise poll until a session appears
+    // Start the shared market-price feed once a session exists.
     const immediateUser = getCurrentAccountId();
     if (immediateUser) {
-      (async () => {
-        const current = getLiveTradePrice();
-        if (!current || current < 10000) {
-          try {
-            // fetch a market price and set it as the base
-            // @ts-ignore
-            const fetched = await (await import('@/lib/live-trade')).fetchMarketPrice();
-            setLiveTradePrice(fetched);
-          } catch {
-            // ignore errors and fall back to existing behavior
-          }
-        }
-        startEngineForUser(immediateUser);
-      })();
+      startEngineForUser(immediateUser);
     }
 
     const poll = window.setInterval(() => {
@@ -114,6 +106,7 @@ export function LiveTradeEngine() {
 
     return () => {
       if (engineInterval) window.clearInterval(engineInterval);
+      if (marketPriceInterval) window.clearInterval(marketPriceInterval);
       if (storageHandler) window.removeEventListener('storage', storageHandler);
       window.clearInterval(poll);
     };
