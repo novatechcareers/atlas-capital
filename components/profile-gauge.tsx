@@ -259,10 +259,10 @@ export function ProfileGauge({ userId, onProfileChange, editable = false, scope 
           <>
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-[color:var(--text-secondary)]">{scope === 'live' ? 'Maximum profit' : 'Min Profit'}</span>
+                <span className="text-[color:var(--text-secondary)]">Min Profit</span>
                 <span>${profile.minProfit.toFixed(2)}</span>
               </div>
-              <label className="sr-only" htmlFor={`trade-profit-cap-${scope}`}>{scope === 'live' ? 'Maximum live-trade profit' : 'Minimum profit'}</label>
+              <label className="sr-only" htmlFor={`trade-profit-cap-${scope}`}>Minimum profit</label>
               <input
                 id={`trade-profit-cap-${scope}`}
                 type="number"
@@ -281,7 +281,7 @@ export function ProfileGauge({ userId, onProfileChange, editable = false, scope 
                 <span className="text-[color:var(--text-secondary)]">Max Loss</span>
                 <span>${profile.maxLoss.toFixed(2)}</span>
               </div>
-              <label className="sr-only" htmlFor={`trade-loss-cap-${scope}`}>{scope === 'live' ? 'Maximum live-trade loss' : 'Maximum loss'}</label>
+              <label className="sr-only" htmlFor={`trade-loss-cap-${scope}`}>Maximum loss</label>
               <input
                 id={`trade-loss-cap-${scope}`}
                 type="number"
