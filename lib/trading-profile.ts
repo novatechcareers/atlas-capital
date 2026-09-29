@@ -1,4 +1,5 @@
 import { getCurrentAccountId, getUserStorageKey } from './auth';
+import { setLiveTradeSimulationVolatility } from './live-trade';
 
 export type ProfileType = 'conservative' | 'balanced' | 'aggressive';
 export type TradingProfileScope = 'auto' | 'live';
@@ -12,6 +13,7 @@ export type TradingProfile = {
   lossRate: number; // 0-100
   minProfit: number;
   maxLoss: number;
+  marketVolatility?: number;
   outcomeMode?: LiveTradeOutcomeMode;
   createdAt: number;
   updatedAt: number;
@@ -40,6 +42,7 @@ export const DEFAULT_PROFILES: Record<ProfileType, Omit<TradingProfile, 'id' | '
     lossRate: 55, // 55% losses
     minProfit: 5,
     maxLoss: 30,
+    marketVolatility: 3,
   },
   balanced: {
     profileType: 'balanced',
@@ -47,6 +50,7 @@ export const DEFAULT_PROFILES: Record<ProfileType, Omit<TradingProfile, 'id' | '
     lossRate: 55,
     minProfit: 10,
     maxLoss: 50,
+    marketVolatility: 8,
   },
   aggressive: {
     profileType: 'aggressive',
@@ -54,6 +58,7 @@ export const DEFAULT_PROFILES: Record<ProfileType, Omit<TradingProfile, 'id' | '
     lossRate: 55,
     minProfit: 20,
     maxLoss: 100,
+    marketVolatility: 15,
   },
 };
 
@@ -138,12 +143,14 @@ export async function syncTradingProfileFromServer(userId?: string | null, scope
       lossRate: Number(serverProfile.loss_rate),
       minProfit: Number(serverProfile.min_profit),
       maxLoss: Number(serverProfile.max_loss),
+      marketVolatility: Number.isFinite(Number(serverProfile.market_volatility)) ? Number(serverProfile.market_volatility) : 8,
       outcomeMode: serverProfile.outcome_mode === 'profit' || serverProfile.outcome_mode === 'loss' ? serverProfile.outcome_mode : 'market',
       createdAt: new Date(serverProfile.created_at).getTime(),
       updatedAt: new Date(serverProfile.updated_at).getTime(),
     };
 
     saveTradingProfile(normalized, resolvedUserId, scope);
+    if (scope === 'live') setLiveTradeSimulationVolatility(Number.isFinite(Number(normalized.marketVolatility)) ? Number(normalized.marketVolatility) : 8);
     return normalized;
   } catch {
     return null;

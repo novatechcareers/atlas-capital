@@ -12,7 +12,9 @@ export type LiveTradePosition = {
   leverage: number;
   openedAt: number;
   closeAt?: number;
+  stakeReserved?: boolean;
   pnl: number;
+  resultMode?: LiveTradeOutcomeMode;
 };
 
 export type LiveTradeHistoryEntry = {
@@ -42,6 +44,25 @@ function normalizeHistoryEntry(entry: LiveTradeHistoryEntry): LiveTradeHistoryEn
     : { ...entry, id: createHistoryId() };
 }
 
+export function resolveLiveTradeOutcomeMode(
+  profile: { outcomeMode?: LiveTradeOutcomeMode; winRate?: number; lossRate?: number } | null | undefined,
+  fallbackMode: LiveTradeOutcomeMode = 'market',
+  randomSource: () => number = Math.random,
+): LiveTradeOutcomeMode {
+  if (profile?.outcomeMode && profile.outcomeMode !== 'market') return profile.outcomeMode;
+  if (fallbackMode && fallbackMode !== 'market') return fallbackMode;
+
+  const winRate = Number(profile?.winRate);
+  const lossRate = Number(profile?.lossRate);
+  if (!Number.isFinite(winRate) || !Number.isFinite(lossRate)) return fallbackMode;
+
+  const totalWeight = Math.max(0, winRate + lossRate);
+  if (totalWeight <= 0) return fallbackMode;
+
+  const roll = randomSource() * totalWeight;
+  return roll < winRate ? 'profit' : 'loss';
+}
+
 export function calculateLiveTradePnl(position: LiveTradePosition, price: number, outcomeMode: LiveTradeOutcomeMode = 'market') {
   if (!Number.isFinite(price) || !Number.isFinite(position.entryPrice) || position.entryPrice <= 0) return 0;
   const diff = position.side === 'Long' ? price - position.entryPrice : position.entryPrice - price;
@@ -51,16 +72,25 @@ export function calculateLiveTradePnl(position: LiveTradePosition, price: number
     : outcomeMode === 'loss'
       ? -Math.abs(rawPnl)
       : rawPnl;
-  return Math.round(directedPnl * 100) / 100;
+  const roundedPnl = Math.round(directedPnl * 100) / 100;
+  const stake = Number.isFinite(position.amount) && position.amount > 0 ? position.amount : 0;
+  return Math.max(-stake, roundedPnl);
+}
+
+export function calculateLiveTradeSettlementAmount(position: LiveTradePosition, pnl: number) {
+  const reservedStake = position.stakeReserved ? Math.max(0, position.amount) : 0;
+  return reservedStake + pnl;
 }
 
 export const LIVE_TRADE_HISTORY_KEY = 'atlas-live-trade-history';
 export const LIVE_TRADE_HISTORY_CHANNEL = 'atlas-live-trade-history';
 export const LIVE_TRADE_PRICE_KEY = 'atlas-live-trade-price';
 export const LIVE_TRADE_PRICE_UPDATED_KEY = 'atlas-live-trade-price-updated';
+export const LIVE_TRADE_PRICE_ERROR_KEY = 'atlas-live-trade-price-error';
 export const LIVE_TRADE_PRICE_CHANNEL = 'atlas-live-trade-price';
 export const LIVE_TRADE_POSITION_KEY = 'atlas-live-trade-position';
 export const LIVE_TRADE_POSITION_CHANNEL = 'atlas-live-trade-position';
+export const LIVE_TRADE_SIMULATION_VOLATILITY_KEY = 'atlas-live-trade-simulation-volatility';
 const LIVE_TRADE_SETTLEMENT_KEY = 'atlas-live-trade-settlement';
 
 export function claimLiveTradeSettlement(openedAt: number, userId?: string | null) {
@@ -103,15 +133,76 @@ export function getLiveTradePriceUpdatedAt() {
   return Number.isFinite(updatedAt) ? updatedAt : 0;
 }
 
+export function getLiveTradePriceError() {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(LIVE_TRADE_PRICE_ERROR_KEY) ?? '';
+}
+
+export function shouldRefreshMarketPrice(lastMessageAt: number, now = Date.now(), staleAfterMs = 2000): boolean {
+  if (!Number.isFinite(lastMessageAt) || lastMessageAt <= 0) return true;
+  return now - lastMessageAt >= staleAfterMs;
+}
+
+export function getLiveTradeSimulationVolatility(): number {
+  if (typeof window === 'undefined') return 8;
+  const value = Number(window.localStorage.getItem(LIVE_TRADE_SIMULATION_VOLATILITY_KEY));
+  if (!Number.isFinite(value) || value <= 0) return 8;
+  return Math.min(30, Math.max(1, value));
+}
+
+export function setLiveTradeSimulationVolatility(value: number): number {
+  if (typeof window === 'undefined') return 8;
+  const normalized = Math.min(30, Math.max(1, Number.isFinite(value) ? value : 8));
+  window.localStorage.setItem(LIVE_TRADE_SIMULATION_VOLATILITY_KEY, String(normalized));
+  return normalized;
+}
+
+export function generateSimulatedMarketPrice(lastPrice: number, now = Date.now(), tickIndex = 0): number {
+  const basePrice = Number.isFinite(lastPrice) && lastPrice > 0 ? lastPrice : 83_877.47;
+  const volatility = getLiveTradeSimulationVolatility();
+  const waveA = Math.sin(now / 1_200 + tickIndex * 0.6);
+  const waveB = Math.cos(now / 800 + tickIndex * 1.7);
+  const waveC = Math.sin(now / 5_500 + tickIndex * 2.8);
+  const driftPercent = (waveA * 0.02 + waveB * 0.018 + waveC * 0.014) * volatility;
+  const simulated = basePrice * (1 + driftPercent);
+  return Math.round(simulated);
+}
+
 export async function fetchMarketPrice(): Promise<number> {
   if (typeof window === 'undefined') return 0;
 
-  const providers = [
+  let serverError = 'Local quote service is unavailable.';
+  try {
+    const response = await fetch('/api/market-price', { cache: 'no-store' });
+    const payload = await response.json();
+    if (response.ok) {
+      const price = Number(payload?.price ?? 0);
+      if (Number.isFinite(price) && price > 0) {
+        setLiveTradePriceError('');
+        return Math.round(price * 100) / 100;
+      }
+    }
+    serverError = payload?.error ?? serverError;
+  } catch {
+    serverError = 'Could not reach the local quote service.';
+  }
+
+  const browserProviders = [
+    async () => {
+      const response = await fetch('https://api.gemini.com/v1/pubticker/btcusd', {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(1500),
+      });
+      if (!response.ok) return 0;
+      const payload = await response.json();
+      return Number(payload?.last ?? 0);
+    },
     async () => {
       const response = await fetch('https://api.exchange.coinbase.com/products/BTC-USD/ticker', {
         cache: 'no-store',
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(900),
+        signal: AbortSignal.timeout(1500),
       });
       if (!response.ok) return 0;
       const payload = await response.json();
@@ -121,7 +212,7 @@ export async function fetchMarketPrice(): Promise<number> {
       const response = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', {
         cache: 'no-store',
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(900),
+        signal: AbortSignal.timeout(1500),
       });
       if (!response.ok) return 0;
       const payload = await response.json();
@@ -129,16 +220,29 @@ export async function fetchMarketPrice(): Promise<number> {
     },
   ];
 
-  for (const getProviderPrice of providers) {
-    try {
-      const price = await getProviderPrice();
-      if (Number.isFinite(price) && price > 0) return Math.round(price * 100) / 100;
-    } catch {
-      // Fall through to the next provider.
-    }
+  const browserQuotes = await Promise.allSettled(browserProviders.map((provider) => provider()));
+  const browserPrice = browserQuotes.find(
+    (result): result is PromiseFulfilledResult<number> => result.status === 'fulfilled' && Number.isFinite(result.value) && result.value > 0,
+  )?.value;
+
+  if (browserPrice) {
+    setLiveTradePriceError('');
+    return Math.round(browserPrice * 100) / 100;
   }
 
-  return 0;
+  const simulatedPrice = generateSimulatedMarketPrice(getLiveTradePrice() || 83_877.47, Date.now(), 1);
+  setLiveTradePriceError(`${serverError} Browser quote fallback also failed; using simulated BTC/USD movement to keep P&L honest.`);
+  setLiveTradePrice(simulatedPrice);
+  return Math.round(simulatedPrice * 100) / 100;
+}
+
+export function setLiveTradePriceError(error: string) {
+  if (typeof window === 'undefined') return;
+  if (error) window.localStorage.setItem(LIVE_TRADE_PRICE_ERROR_KEY, error);
+  else window.localStorage.removeItem(LIVE_TRADE_PRICE_ERROR_KEY);
+  const channel = new BroadcastChannel(LIVE_TRADE_PRICE_CHANNEL);
+  channel.postMessage({ type: 'live-trade-price-updated', price: getLiveTradePrice(), updatedAt: getLiveTradePriceUpdatedAt(), error });
+  channel.close();
 }
 
 export function setLiveTradePrice(value: number) {
@@ -150,6 +254,7 @@ export function setLiveTradePrice(value: number) {
   const updatedAt = Date.now();
   window.localStorage.setItem(LIVE_TRADE_PRICE_KEY, String(normalized));
   window.localStorage.setItem(LIVE_TRADE_PRICE_UPDATED_KEY, String(updatedAt));
+  window.localStorage.removeItem(LIVE_TRADE_PRICE_ERROR_KEY);
 
   const channel = new BroadcastChannel(LIVE_TRADE_PRICE_CHANNEL);
   channel.postMessage({ type: 'live-trade-price-updated', price: normalized, updatedAt });
@@ -158,8 +263,8 @@ export function setLiveTradePrice(value: number) {
   return normalized;
 }
 
-export function subscribeToLiveTradePrice(callback: (price: number, updatedAt: number) => void) {
-  const sync = () => callback(getLiveTradePrice(), getLiveTradePriceUpdatedAt());
+export function subscribeToLiveTradePrice(callback: (price: number, updatedAt: number, error: string) => void) {
+  const sync = () => callback(getLiveTradePrice(), getLiveTradePriceUpdatedAt(), getLiveTradePriceError());
   sync();
 
   const storageHandler = (event: StorageEvent) => {
@@ -208,7 +313,7 @@ export async function syncLiveTradeStateFromServer(userId?: string | null) {
     const payload = await response.json();
     setLiveTradePosition(payload?.position ?? null, resolvedUserId, false);
     if (Array.isArray(payload?.history)) {
-      saveLiveTradeHistory(payload.history, resolvedUserId);
+      saveLiveTradeHistory(payload.history, resolvedUserId, false);
     }
     return { position: payload?.position ?? null, history: Array.isArray(payload?.history) ? payload.history : [] };
   } catch {
@@ -294,7 +399,7 @@ export function getLiveTradeHistory(userId?: string | null): LiveTradeHistoryEnt
   }
 }
 
-export function saveLiveTradeHistory(history: LiveTradeHistoryEntry[], userId?: string | null) {
+export function saveLiveTradeHistory(history: LiveTradeHistoryEntry[], userId?: string | null, syncServer = true) {
   if (typeof window === 'undefined') return history;
 
   const resolvedUserId = userId ?? getCurrentAccountId();
@@ -305,7 +410,7 @@ export function saveLiveTradeHistory(history: LiveTradeHistoryEntry[], userId?: 
   channel.postMessage({ type: 'live-trade-history-updated', history: normalizedHistory, userId: resolvedUserId });
   channel.close();
 
-  if (resolvedUserId) {
+  if (resolvedUserId && syncServer) {
     void fetch('/api/live-trade', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -13,10 +13,13 @@ import {
 import {
   addLiveTradeHistoryEntry,
   calculateLiveTradePnl,
+  calculateLiveTradeSettlementAmount,
   claimLiveTradeSettlement,
   getLiveTradePosition,
   getLiveTradePrice,
   releaseLiveTradeSettlement,
+  resolveLiveTradeOutcomeMode,
+  syncLiveTradeStateFromServer,
   setLiveTradePosition,
   setLiveTradePrice,
   subscribeToLiveTradeHistory,
@@ -42,6 +45,7 @@ export default function LiveTradePage() {
   const [balance, setBalance] = useState(0);
   const [price, setPrice] = useState(0);
   const [priceUpdatedAt, setPriceUpdatedAt] = useState(0);
+  const [priceError, setPriceError] = useState('');
   const [tradeAmount, setTradeAmount] = useState('100');
   const [leverage, setLeverage] = useState(1);
   const [closeDuration, setCloseDuration] = useState(60_000);
@@ -49,6 +53,7 @@ export default function LiveTradePage() {
   const [position, setPosition] = useState<TradePosition | null>(null);
   const [history, setHistory] = useState<LiveTradeHistoryEntry[]>([]);
   const [message, setMessage] = useState('');
+  const [isOpening, setIsOpening] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [outcomeMode, setOutcomeMode] = useState<'market' | 'profit' | 'loss'>('market');
 
@@ -66,9 +71,10 @@ export default function LiveTradePage() {
   }, []);
 
   useEffect(() => {
-    const unsubscribePrice = subscribeToLiveTradePrice((nextPrice, updatedAt) => {
+    const unsubscribePrice = subscribeToLiveTradePrice((nextPrice, updatedAt, error) => {
       setPrice(nextPrice);
       setPriceUpdatedAt(updatedAt);
+      setPriceError(error);
     });
     return unsubscribePrice;
   }, []);
@@ -78,6 +84,7 @@ export default function LiveTradePage() {
     const unsubscribePosition = subscribeToLiveTradePosition(setPosition, userId);
 
     const unsubscribeHistory = subscribeToLiveTradeHistory(setHistory, userId);
+    void syncLiveTradeStateFromServer(userId);
     const cachedProfile = getTradingProfile(userId, 'live');
     if (cachedProfile?.outcomeMode) setOutcomeMode(cachedProfile.outcomeMode);
     void syncTradingProfileFromServer(userId, 'live').then((profile) => {
@@ -100,12 +107,13 @@ export default function LiveTradePage() {
 
   const unrealizedPnl = useMemo(() => {
     if (!position) return 0;
-    return calculateLiveTradePnl(position, price, outcomeMode);
+    const effectiveOutcomeMode = position.resultMode ?? (outcomeMode === 'profit' || outcomeMode === 'loss' ? outcomeMode : 'market');
+    return calculateLiveTradePnl(position, price, effectiveOutcomeMode);
   }, [position, price, outcomeMode]);
 
   const isHighRisk = leverage >= 10;
 
-  const openPosition = () => {
+  const openPosition = async () => {
     const userId = getCurrentAccountId();
     if (!userId) return;
     if (price <= 0) {
@@ -127,9 +135,19 @@ export default function LiveTradePage() {
       return;
     }
 
-    // Do not deduct balance client-side for opening a position; server is authoritative.
-    void syncBalanceFromServer(userId);
+    setIsOpening(true);
+    setMessage('');
+    const reservedBalance = await adjustBalanceFromServer(-numericAmount, userId);
+    if (reservedBalance === null) {
+      await syncBalanceFromServer(userId);
+      setMessage('Unable to reserve this stake. Refresh your balance and try again.');
+      setIsOpening(false);
+      return;
+    }
+
     setLiveTradePrice(price);
+    const profile = getTradingProfile(userId, 'live');
+    const effectiveOutcomeMode = resolveLiveTradeOutcomeMode(profile, outcomeMode);
     const nextPosition = {
       side,
       amount: numericAmount,
@@ -138,11 +156,14 @@ export default function LiveTradePage() {
       currentPrice: price,
       openedAt: Date.now(),
       closeAt: Date.now() + closeDuration,
+      stakeReserved: true,
       pnl: 0,
+      resultMode: effectiveOutcomeMode === 'market' ? undefined : effectiveOutcomeMode,
     };
     setLiveTradePosition(nextPosition, userId);
     setPosition(nextPosition);
-    setMessage(`Opened ${side} position at ${formatCurrency(price)} with ${formatCurrency(numericAmount)} and ${leverage}x leverage.`);
+    setMessage(`Opened ${side} position at ${formatCurrency(price)}. ${formatCurrency(numericAmount)} is reserved until the trade closes.`);
+    setIsOpening(false);
   };
 
   const closePosition = async () => {
@@ -162,8 +183,9 @@ export default function LiveTradePage() {
 
       const settlementPrice = getLiveTradePrice();
       const liveProfile = latestProfile ?? getTradingProfile(userId, 'live');
-      const profit = calculateLiveTradePnl(activePosition, settlementPrice, liveProfile?.outcomeMode ?? outcomeMode);
-      const nextBalance = await adjustBalanceFromServer(profit, userId);
+      const effectiveOutcomeMode = activePosition.resultMode ?? (liveProfile?.outcomeMode && liveProfile.outcomeMode !== 'market' ? liveProfile.outcomeMode : (outcomeMode === 'profit' || outcomeMode === 'loss' ? outcomeMode : 'market'));
+      const profit = calculateLiveTradePnl(activePosition, settlementPrice, effectiveOutcomeMode);
+      const nextBalance = await adjustBalanceFromServer(calculateLiveTradeSettlementAmount(activePosition, profit), userId);
       if (nextBalance === null) {
         setMessage('Unable to settle this trade with the account balance service. The position remains open; please try again.');
         return;
@@ -216,7 +238,7 @@ export default function LiveTradePage() {
             <div className="h-[650px] w-full overflow-hidden rounded-3xl bg-black">
               <iframe
                 id="tradingview_0f1e7"
-                src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_0f1e7&symbol=COINBASE%3ABTCUSD&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=dark&style=1&timezone=Etc%2FUTC&withdateranges=1&showpopupbutton=1&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&showpopupbutton=1&locale=en&utm_source=app.expertspromarketing.com&utm_medium=widget&utm_campaign=chart&utm_term=COINBASE%3ABTCUSD"
+                src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_0f1e7&symbol=BINANCE%3ABTCUSDT&interval=1&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=dark&style=1&timezone=Etc%2FUTC&withdateranges=1&showpopupbutton=1&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&showpopupbutton=1&locale=en&utm_source=app.expertspromarketing.com&utm_medium=widget&utm_campaign=chart&utm_term=BINANCE%3ABTCUSDT"
                 style={{ width: '100%', height: '100%', margin: 0, padding: 0, border: 0 }}
                 frameBorder="0"
                 scrolling="no"
@@ -232,7 +254,7 @@ export default function LiveTradePage() {
                 <div className="rounded-3xl border border-slate-700/70 bg-slate-800/70 p-4">
                   <p className="text-sm text-slate-400">Current price</p>
                   <p className="mt-2 text-3xl font-semibold text-white">{price > 0 ? formatCurrency(price) : 'Waiting for live price…'}</p>
-                  <p className="mt-1 text-xs text-slate-500">{priceUpdatedAt ? `Updated ${new Date(priceUpdatedAt).toLocaleTimeString()}` : 'Connecting to BTC/USD feed'}</p>
+                  <p className={`mt-1 text-xs ${priceError ? 'text-rose-300' : 'text-slate-500'}`}>{priceError || (priceUpdatedAt ? `Updated ${new Date(priceUpdatedAt).toLocaleTimeString()}` : 'Connecting to BTC/USD feed')}</p>
                 </div>
                 <div className="rounded-3xl border border-slate-700/70 bg-slate-800/70 p-4">
                   <p className="text-sm text-slate-400">Open position</p>
@@ -332,11 +354,11 @@ export default function LiveTradePage() {
                 {!position ? (
                   <button
                     type="button"
-                    disabled={!canOpen}
+                    disabled={!canOpen || isOpening}
                     onClick={openPosition}
                     className={`w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${canOpen ? 'bg-cyan-500 text-slate-900 hover:opacity-90' : 'cursor-not-allowed bg-slate-700 text-slate-400'}`}
                   >
-                    Open {side} position
+                    {isOpening ? 'Reserving stake…' : `Open ${side} position`}
                   </button>
                 ) : (
                   <button

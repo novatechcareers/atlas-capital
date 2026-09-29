@@ -52,6 +52,7 @@ export async function GET(req: Request) {
         leverage: Number(positionData.leverage),
         openedAt: new Date(positionData.opened_at).getTime(),
         closeAt: positionData.closed_at ? new Date(positionData.closed_at).getTime() : undefined,
+        stakeReserved: Boolean(positionData.stake_reserved),
         pnl: Number(positionData.pnl),
       } : null,
       history: (historyData ?? []).map((entry: any) => ({
@@ -115,6 +116,7 @@ export async function POST(req: Request) {
           current_price: Number(position.currentPrice),
           amount: Number(position.amount),
           leverage: Number(position.leverage),
+          stake_reserved: position.stakeReserved === true,
           pnl: Number(position.pnl ?? 0),
           opened_at: new Date(position.openedAt).toISOString(),
           closed_at: position.closeAt ? new Date(position.closeAt).toISOString() : null,

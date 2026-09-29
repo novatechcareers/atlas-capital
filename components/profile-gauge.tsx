@@ -202,7 +202,7 @@ export function ProfileGauge({ userId, onProfileChange, editable = false, scope 
             {outcomeError ? <p role="alert" className="text-sm text-rose-300">{outcomeError}</p> : null}
           </>
         ) : null}
-        {scope !== 'live' ? <>
+
         {/* Win/Loss Gauge */}
         <div>
           <div className="flex justify-between text-sm mb-2">
@@ -253,7 +253,6 @@ export function ProfileGauge({ userId, onProfileChange, editable = false, scope 
             />
           )}
         </div>
-        </> : null}
 
         {editable && scope !== 'live' && (
           <>

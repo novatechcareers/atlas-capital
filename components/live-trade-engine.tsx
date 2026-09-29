@@ -6,13 +6,16 @@ import { adjustBalanceFromServer } from '@/lib/balance';
 import {
   addLiveTradeHistoryEntry,
   calculateLiveTradePnl,
+  calculateLiveTradeSettlementAmount,
   claimLiveTradeSettlement,
   fetchMarketPrice,
   getLiveTradePosition,
   getLiveTradePrice,
   releaseLiveTradeSettlement,
+  resolveLiveTradeOutcomeMode,
   setLiveTradePosition,
   setLiveTradePrice,
+  shouldRefreshMarketPrice,
   type LiveTradePosition,
 } from '@/lib/live-trade';
 import {
@@ -26,9 +29,15 @@ export function LiveTradeEngine() {
   useEffect(() => {
     let engineInterval: number | null = null;
     let marketRefreshInterval: number | null = null;
+    let marketReconnectTimer: number | null = null;
+    let marketSocket: WebSocket | null = null;
+    let marketSocketConnected = false;
     let storageHandler: ((event: StorageEvent) => void) | null = null;
     let started = false;
     let quoteRequestInFlight = false;
+    let marketLastMessageAt = 0;
+    let marketFeedIndex = 0;
+    let disposed = false;
     let profile: TradingProfile | null = getTradingProfile(undefined, 'live');
     const userId = getCurrentAccountId();
 
@@ -41,13 +50,82 @@ export function LiveTradeEngine() {
 
       const syncMarketPrice = async () => {
         if (quoteRequestInFlight) return;
+        if (marketSocketConnected && !shouldRefreshMarketPrice(marketLastMessageAt)) return;
         quoteRequestInFlight = true;
         try {
           const marketPrice = await fetchMarketPrice();
-          if (marketPrice > 0) setLiveTradePrice(marketPrice);
+          if (marketPrice > 0) {
+            setLiveTradePrice(marketPrice);
+            marketLastMessageAt = Date.now();
+          }
         } finally {
           quoteRequestInFlight = false;
         }
+      };
+
+      const scheduleMarketReconnect = () => {
+        if (disposed || marketReconnectTimer !== null) return;
+        marketReconnectTimer = window.setTimeout(() => {
+          marketReconnectTimer = null;
+          connectMarketSocket();
+        }, 3000) as unknown as number;
+      };
+
+      const connectMarketSocket = () => {
+        if (disposed) return;
+
+        const feeds = [
+          { name: 'Binance', url: 'wss://stream.binance.com:443/ws/btcusdt@trade' },
+          { name: 'Coinbase', url: 'wss://ws-feed.exchange.coinbase.com' },
+        ];
+        const feed = feeds[marketFeedIndex];
+        let socket: WebSocket;
+        try {
+          socket = new WebSocket(feed.url);
+        } catch {
+          marketFeedIndex = (marketFeedIndex + 1) % feeds.length;
+          scheduleMarketReconnect();
+          return;
+        }
+
+        marketSocket = socket;
+        marketSocketConnected = false;
+        socket.onopen = () => {
+          if (marketSocket !== socket) return;
+          marketSocketConnected = true;
+          if (feed.name === 'Coinbase') {
+            socket.send(JSON.stringify({
+              type: 'subscribe',
+              product_ids: ['BTC-USD'],
+              channels: ['ticker'],
+            }));
+          }
+        };
+        socket.onmessage = (event) => {
+          if (marketSocket !== socket) return;
+          try {
+            const payload = JSON.parse(String(event.data));
+            const price = Number(feed.name === 'Binance' ? payload?.p : payload?.price);
+            if (Number.isFinite(price) && price > 0) {
+              marketSocketConnected = true;
+              marketLastMessageAt = Date.now();
+              setLiveTradePrice(price);
+            }
+          } catch {
+            // Ignore malformed market messages and keep the stream open.
+          }
+        };
+        socket.onerror = () => {
+          marketSocketConnected = false;
+          socket.close();
+        };
+        socket.onclose = () => {
+          if (marketSocket !== socket) return;
+          marketSocketConnected = false;
+          marketSocket = null;
+          marketFeedIndex = (marketFeedIndex + 1) % feeds.length;
+          scheduleMarketReconnect();
+        };
       };
 
       const updatePosition = () => {
@@ -55,12 +133,13 @@ export function LiveTradeEngine() {
         if (!position) return;
 
         const price = getLiveTradePrice();
-        const pnl = calculateLiveTradePnl(position, price, profile?.outcomeMode ?? 'market');
+        const effectiveOutcomeMode = position.resultMode ?? (profile?.outcomeMode && profile.outcomeMode !== 'market' ? profile.outcomeMode : 'market');
+        const pnl = calculateLiveTradePnl(position, price, effectiveOutcomeMode);
 
         if (position.closeAt && Date.now() >= position.closeAt) {
           if (!claimLiveTradeSettlement(position.openedAt, userId)) return;
           const realizedPnl = pnl;
-          void adjustBalanceFromServer(realizedPnl, userId).then((nextBalance) => {
+          void adjustBalanceFromServer(calculateLiveTradeSettlementAmount(position, realizedPnl), userId).then((nextBalance) => {
             if (nextBalance === null) return;
             const latestPosition = getLiveTradePosition(userId);
             if (!latestPosition || latestPosition.openedAt !== position.openedAt) return;
@@ -85,6 +164,7 @@ export function LiveTradeEngine() {
           ...position,
           currentPrice: price,
           pnl,
+          resultMode: position.resultMode ?? effectiveOutcomeMode,
         };
 
         setLiveTradePosition(nextPosition, userId);
@@ -99,13 +179,15 @@ export function LiveTradeEngine() {
       }, 2000) as unknown as number;
 
       void syncMarketPrice();
+      connectMarketSocket();
 
       storageHandler = () => {
         const position = getLiveTradePosition(userId);
         if (!position) return;
         const price = getLiveTradePrice();
-        const pnl = calculateLiveTradePnl(position, price, profile?.outcomeMode ?? 'market');
-        setLiveTradePosition({ ...position, currentPrice: price, pnl }, userId);
+        const effectiveOutcomeMode = position.resultMode ?? (profile?.outcomeMode && profile.outcomeMode !== 'market' ? profile.outcomeMode : 'market');
+        const pnl = calculateLiveTradePnl(position, price, effectiveOutcomeMode);
+        setLiveTradePosition({ ...position, currentPrice: price, pnl, resultMode: position.resultMode ?? effectiveOutcomeMode }, userId);
       };
 
       window.addEventListener('storage', storageHandler);
@@ -136,8 +218,11 @@ export function LiveTradeEngine() {
     }, 1000) as unknown as number;
 
     return () => {
+      disposed = true;
       if (engineInterval) window.clearInterval(engineInterval);
       if (marketRefreshInterval) window.clearInterval(marketRefreshInterval);
+      if (marketReconnectTimer !== null) window.clearTimeout(marketReconnectTimer);
+      marketSocket?.close();
       if (storageHandler) window.removeEventListener('storage', storageHandler);
       window.clearInterval(poll);
       window.clearInterval(profileSyncTimer);

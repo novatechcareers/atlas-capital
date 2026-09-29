@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS public.live_trading_profiles (
   loss_rate DECIMAL(5, 2) NOT NULL DEFAULT 55.00 CHECK (loss_rate >= 0 AND loss_rate <= 100),
   min_profit DECIMAL(10, 2) NOT NULL DEFAULT 10.00 CHECK (min_profit >= 0 AND min_profit <= 1000),
   max_loss DECIMAL(10, 2) NOT NULL DEFAULT 50.00 CHECK (max_loss >= 0 AND max_loss <= 1000),
+  market_volatility DECIMAL(5, 2) NOT NULL DEFAULT 8.00 CHECK (market_volatility >= 1 AND market_volatility <= 30),
   outcome_mode TEXT NOT NULL DEFAULT 'market' CHECK (outcome_mode IN ('market', 'profit', 'loss')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -15,6 +16,10 @@ CREATE TABLE IF NOT EXISTS public.live_trading_profiles (
 ALTER TABLE public.live_trading_profiles
   ADD COLUMN IF NOT EXISTS outcome_mode TEXT NOT NULL DEFAULT 'market'
   CHECK (outcome_mode IN ('market', 'profit', 'loss'));
+
+ALTER TABLE public.live_trading_profiles
+  ADD COLUMN IF NOT EXISTS market_volatility DECIMAL(5, 2) NOT NULL DEFAULT 8.00
+  CHECK (market_volatility >= 1 AND market_volatility <= 30);
 
 CREATE INDEX IF NOT EXISTS idx_live_trading_profiles_user_id
   ON public.live_trading_profiles (user_id);

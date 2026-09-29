@@ -17,6 +17,7 @@ export async function GET(request: Request) {
           loss_rate: 55,
           min_profit: 10,
           max_loss: 50,
+          market_volatility: 8,
           outcome_mode: 'market',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -34,12 +35,17 @@ export async function GET(request: Request) {
     }
     const rows = await response.json();
     const profile = rows[0] ?? null;
-    if (profile && !('outcome_mode' in profile)) {
-      profile.outcome_mode = Number(profile.win_rate) === 100
-        ? 'profit'
-        : Number(profile.win_rate) === 0
-          ? 'loss'
-          : 'market';
+    if (profile) {
+      if (!('outcome_mode' in profile)) {
+        profile.outcome_mode = Number(profile.win_rate) === 100
+          ? 'profit'
+          : Number(profile.win_rate) === 0
+            ? 'loss'
+            : 'market';
+      }
+      if (!('market_volatility' in profile) || !Number.isFinite(Number(profile.market_volatility))) {
+        profile.market_volatility = 8;
+      }
     }
     return NextResponse.json({ profile });
   } catch (error) {
@@ -59,6 +65,7 @@ export async function PATCH(request: Request) {
     const lossRate = Number(body.lossRate);
     const minProfit = Number(body.minProfit);
     const maxLoss = Number(body.maxLoss);
+    const marketVolatility = body.marketVolatility === undefined ? undefined : Number(body.marketVolatility);
     const outcomeMode = body.outcomeMode;
 
     if (!userId) return NextResponse.json({ error: 'userId is required' }, { status: 400 });
@@ -69,8 +76,9 @@ export async function PATCH(request: Request) {
       lossRate < 0 || lossRate > 100 ||
       Math.round((winRate + lossRate) * 100) / 100 !== 100 ||
       minProfit < 0 || minProfit > 1000 ||
-      maxLoss < 0 || maxLoss > 1000
-      || (outcomeMode !== undefined && !['market', 'profit', 'loss'].includes(outcomeMode))
+      maxLoss < 0 || maxLoss > 1000 ||
+      (marketVolatility !== undefined && (!Number.isFinite(marketVolatility) || marketVolatility < 1 || marketVolatility > 30)) ||
+      (outcomeMode !== undefined && !['market', 'profit', 'loss'].includes(outcomeMode))
     ) {
       return NextResponse.json({ error: 'Invalid live-trade profile values.' }, { status: 400 });
     }
@@ -88,6 +96,7 @@ export async function PATCH(request: Request) {
           loss_rate: lossRate,
           min_profit: minProfit,
           max_loss: maxLoss,
+          market_volatility: marketVolatility ?? 8,
           outcome_mode: outcomeMode ?? 'market',
           created_at: now,
           updated_at: now,
@@ -109,6 +118,7 @@ export async function PATCH(request: Request) {
       loss_rate: lossRate,
       min_profit: minProfit,
       max_loss: maxLoss,
+      ...(marketVolatility === undefined ? {} : { market_volatility: marketVolatility }),
       updated_at: now,
     };
 
@@ -144,6 +154,7 @@ export async function PATCH(request: Request) {
           ...baseProfile,
           win_rate: fallbackWinRate,
           loss_rate: 100 - fallbackWinRate,
+          ...(marketVolatility === undefined ? {} : { market_volatility: marketVolatility }),
         }),
       });
       if (!response.ok) {
