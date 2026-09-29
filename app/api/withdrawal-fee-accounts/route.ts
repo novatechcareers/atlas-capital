@@ -25,18 +25,21 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { userId, bankName, accountName, accountNumber, reference } = body || {};
-    if (!userId || !bankName || !accountName || !accountNumber || !reference) {
+    const { userId, accountType = 'bank', bankName, accountName, accountNumber, reference } = body || {};
+    if (!userId || !['bank', 'wallet'].includes(accountType) || !bankName || !accountNumber) {
       return NextResponse.json({ error: 'Missing withdrawal fee account details.' }, { status: 400 });
+    }
+    if (accountType === 'bank' && (!accountName || !reference)) {
+      return NextResponse.json({ error: 'Bank account name and payment reference are required.' }, { status: 400 });
     }
     const supabase = getServiceClient();
     if (!supabase) return NextResponse.json({ error: 'Database not configured for withdrawal fee accounts.' }, { status: 500 });
     const { data, error } = await supabase.from('withdrawal_fee_accounts').upsert({
       user_id: userId,
       bank_name: String(bankName).trim(),
-      account_name: String(accountName).trim(),
+      account_name: accountType === 'wallet' ? 'Digital wallet' : String(accountName).trim(),
       account_number: String(accountNumber).trim(),
-      reference: String(reference).trim(),
+      reference: accountType === 'wallet' ? '' : String(reference).trim(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' }).select('*').single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

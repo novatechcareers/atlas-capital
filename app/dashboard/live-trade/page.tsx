@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DashboardShell } from '@/components/dashboard-shell';
 import { getCurrentAccountId } from '@/lib/auth';
-import { calculateProfileClosePnl, getTradingProfile } from '@/lib/trading-profile';
+import { getTradingProfile, subscribeToTradingProfile, syncTradingProfileFromServer } from '@/lib/trading-profile';
 import {
   adjustBalanceFromServer,
   formatCurrency,
@@ -13,6 +13,10 @@ import {
 import {
   addLiveTradeHistoryEntry,
   calculateLiveTradePnl,
+  claimLiveTradeSettlement,
+  getLiveTradePosition,
+  getLiveTradePrice,
+  releaseLiveTradeSettlement,
   setLiveTradePosition,
   setLiveTradePrice,
   subscribeToLiveTradeHistory,
@@ -36,15 +40,17 @@ const CLOSE_DURATION_STORAGE_KEY = 'atlas-live-trade-close-duration';
 
 export default function LiveTradePage() {
   const [balance, setBalance] = useState(0);
-  const [price, setPrice] = useState(68940);
+  const [price, setPrice] = useState(0);
+  const [priceUpdatedAt, setPriceUpdatedAt] = useState(0);
   const [tradeAmount, setTradeAmount] = useState('100');
   const [leverage, setLeverage] = useState(1);
-  const [timeframe, setTimeframe] = useState('Normal');
   const [closeDuration, setCloseDuration] = useState(60_000);
   const [side, setSide] = useState<TradeSide>('Long');
   const [position, setPosition] = useState<TradePosition | null>(null);
   const [history, setHistory] = useState<LiveTradeHistoryEntry[]>([]);
   const [message, setMessage] = useState('');
+  const [isClosing, setIsClosing] = useState(false);
+  const [outcomeMode, setOutcomeMode] = useState<'market' | 'profit' | 'loss'>('market');
 
   useEffect(() => {
     const storedDuration = window.localStorage.getItem(CLOSE_DURATION_STORAGE_KEY);
@@ -60,7 +66,10 @@ export default function LiveTradePage() {
   }, []);
 
   useEffect(() => {
-    const unsubscribePrice = subscribeToLiveTradePrice(setPrice);
+    const unsubscribePrice = subscribeToLiveTradePrice((nextPrice, updatedAt) => {
+      setPrice(nextPrice);
+      setPriceUpdatedAt(updatedAt);
+    });
     return unsubscribePrice;
   }, []);
 
@@ -69,27 +78,40 @@ export default function LiveTradePage() {
     const unsubscribePosition = subscribeToLiveTradePosition(setPosition, userId);
 
     const unsubscribeHistory = subscribeToLiveTradeHistory(setHistory, userId);
+    const cachedProfile = getTradingProfile(userId, 'live');
+    if (cachedProfile?.outcomeMode) setOutcomeMode(cachedProfile.outcomeMode);
+    void syncTradingProfileFromServer(userId, 'live').then((profile) => {
+      if (profile?.outcomeMode) setOutcomeMode(profile.outcomeMode);
+    });
+    const unsubscribeProfile = subscribeToTradingProfile((profile) => {
+      setOutcomeMode(profile?.outcomeMode ?? 'market');
+    }, userId, 'live');
     return () => {
       unsubscribePosition();
       unsubscribeHistory();
+      unsubscribeProfile();
     };
   }, []);
 
   const numericAmount = Number(tradeAmount.replace(/[^0-9.]/g, '')) || 0;
   const belowMinimum = numericAmount < 100;
   const amountExceedsBalance = numericAmount > balance;
-  const canOpen = numericAmount >= 100 && !amountExceedsBalance && !position;
+  const canOpen = numericAmount >= 100 && !amountExceedsBalance && !position && price > 0;
 
   const unrealizedPnl = useMemo(() => {
     if (!position) return 0;
-    return calculateLiveTradePnl(position, price);
-  }, [position, price]);
+    return calculateLiveTradePnl(position, price, outcomeMode);
+  }, [position, price, outcomeMode]);
 
-  const isHighRisk = leverage >= 25 || timeframe === 'High' || timeframe === 'Extreme';
+  const isHighRisk = leverage >= 10;
 
   const openPosition = () => {
     const userId = getCurrentAccountId();
     if (!userId) return;
+    if (price <= 0) {
+      setMessage('Waiting for a valid live BTC/USD price. Please try again shortly.');
+      return;
+    }
     if (belowMinimum) {
       setMessage('Minimum trade amount is $100. Please increase the trade amount to continue.');
       return;
@@ -123,34 +145,53 @@ export default function LiveTradePage() {
     setMessage(`Opened ${side} position at ${formatCurrency(price)} with ${formatCurrency(numericAmount)} and ${leverage}x leverage.`);
   };
 
-  const closePosition = () => {
+  const closePosition = async () => {
     const userId = getCurrentAccountId();
-    if (!userId) return;
-    if (!position) return;
-    const grossPnl = Math.round(unrealizedPnl * 100) / 100;
-    const executionFee = Math.round(position.amount * 0.0125 * 100) / 100;
-    const slippage = Math.round(Math.abs(grossPnl) * Math.random() * 0.08 * 100) / 100;
-    const profilePnl = calculateProfileClosePnl(grossPnl, getTradingProfile(userId));
-    const profit = Math.round((profilePnl - executionFee - slippage) * 100) / 100;
-    void adjustBalanceFromServer(profit, userId);
+    if (!userId || !position || isClosing) return;
+    const positionToClose = position;
+    if (!claimLiveTradeSettlement(positionToClose.openedAt, userId)) {
+      setMessage('This trade is already being settled. Please wait a moment.');
+      return;
+    }
 
-    const entry: LiveTradeHistoryEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      side: position.side,
-      amount: position.amount,
-      leverage: position.leverage,
-      entryPrice: position.entryPrice,
-      exitPrice: price,
-      pnl: profit,
-      openedAt: position.openedAt,
-      closedAt: Date.now(),
-      status: 'Closed',
-    };
+    setIsClosing(true);
+    try {
+      const latestProfile = await syncTradingProfileFromServer(userId, 'live');
+      const activePosition = getLiveTradePosition(userId);
+      if (!activePosition || activePosition.openedAt !== positionToClose.openedAt) return;
 
-    addLiveTradeHistoryEntry(entry, userId);
-    setLiveTradePosition(null, userId);
-    setPosition(null);
-    setMessage(`Closed position and realized ${profit >= 0 ? 'gain' : 'loss'} of ${formatCurrency(profit)}. Profit has been added to your balance.`);
+      const settlementPrice = getLiveTradePrice();
+      const liveProfile = latestProfile ?? getTradingProfile(userId, 'live');
+      const profit = calculateLiveTradePnl(activePosition, settlementPrice, liveProfile?.outcomeMode ?? outcomeMode);
+      const nextBalance = await adjustBalanceFromServer(profit, userId);
+      if (nextBalance === null) {
+        setMessage('Unable to settle this trade with the account balance service. The position remains open; please try again.');
+        return;
+      }
+
+      const entry: LiveTradeHistoryEntry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        side: activePosition.side,
+        amount: activePosition.amount,
+        leverage: activePosition.leverage,
+        entryPrice: activePosition.entryPrice,
+        exitPrice: settlementPrice,
+        pnl: profit,
+        openedAt: activePosition.openedAt,
+        closedAt: Date.now(),
+        status: 'Closed',
+      };
+
+      addLiveTradeHistoryEntry(entry, userId);
+      setLiveTradePosition(null, userId);
+      setPosition(null);
+      setMessage(`Closed position and realized a ${profit >= 0 ? 'profit' : 'loss'} of ${formatCurrency(profit)}. The balance and trade history use this same amount.`);
+    } catch {
+      setMessage('Unable to close this trade. The position remains open; please try again.');
+    } finally {
+      releaseLiveTradeSettlement(positionToClose.openedAt, userId);
+      setIsClosing(false);
+    }
   };
 
   return (
@@ -190,7 +231,8 @@ export default function LiveTradePage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-3xl border border-slate-700/70 bg-slate-800/70 p-4">
                   <p className="text-sm text-slate-400">Current price</p>
-                  <p className="mt-2 text-3xl font-semibold text-white">{formatCurrency(price)}</p>
+                  <p className="mt-2 text-3xl font-semibold text-white">{price > 0 ? formatCurrency(price) : 'Waiting for live price…'}</p>
+                  <p className="mt-1 text-xs text-slate-500">{priceUpdatedAt ? `Updated ${new Date(priceUpdatedAt).toLocaleTimeString()}` : 'Connecting to BTC/USD feed'}</p>
                 </div>
                 <div className="rounded-3xl border border-slate-700/70 bg-slate-800/70 p-4">
                   <p className="text-sm text-slate-400">Open position</p>
@@ -236,21 +278,6 @@ export default function LiveTradePage() {
                     <p className="text-xs text-slate-500">Higher leverage increases potential profit and loss.</p>
                   </div>
                   <div className="grid gap-2">
-                    <label className="text-sm text-slate-400">Timeframe</label>
-                    <select
-                      value={timeframe}
-                      onChange={(e) => setTimeframe(e.target.value)}
-                      className="w-full rounded-2xl border border-slate-700/70 bg-slate-800/70 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
-                    >
-                      {['Low', 'Normal', 'High', 'Extreme'].map((tf) => (
-                        <option key={tf} value={tf} className="bg-slate-900 text-white">
-                          {tf}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-slate-500">Higher timeframe increases simulated price movement.</p>
-                  </div>
-                  <div className="grid gap-2">
                     <label className="text-sm text-slate-400">Auto-close trade after</label>
                     <select
                       value={closeDuration}
@@ -292,7 +319,7 @@ export default function LiveTradePage() {
                   {isHighRisk ? (
                     <div className="rounded-2xl border border-rose-500 bg-rose-600/10 p-4 text-sm text-rose-100">
                       <p className="font-semibold">High risk — proceed with caution</p>
-                      <p className="mt-1">Using <span className="font-medium">{leverage}x</span> leverage{timeframe ? ` on ${timeframe} timeframe` : ''} greatly increases potential profit and loss. Only trade with funds you can afford to lose.</p>
+                      <p className="mt-1">Using <span className="font-medium">{leverage}x</span> leverage multiplies the effect of the actual market price movement. Only trade with funds you can afford to lose.</p>
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-amber-500 bg-amber-500/10 p-4 text-sm text-amber-100">
@@ -315,17 +342,18 @@ export default function LiveTradePage() {
                   <button
                     type="button"
                     onClick={closePosition}
-                    className="w-full rounded-2xl bg-rose-500 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:opacity-90"
+                    disabled={isClosing}
+                    className="w-full rounded-2xl bg-rose-500 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
                   >
-                    Close position
+                    {isClosing ? 'Settling position…' : 'Close position'}
                   </button>
                 )}
               </div>
 
               <div className="rounded-3xl border border-slate-700/70 bg-slate-800/70 p-4 text-sm text-slate-300">
-                <p className="text-slate-400">Trading note</p>
+                <p className="text-slate-400">Selected outcome</p>
                 <p className="mt-2 text-sm text-slate-300">
-                  Use the chart and trade panel together to manage positions from your account balance. Higher leverage multiplies profit and loss; selecting a more aggressive timeframe increases simulated price movement and therefore potential gains or losses.
+                  {outcomeMode === 'profit' ? 'Profit is selected by the administrator.' : outcomeMode === 'loss' ? 'Loss is selected by the administrator.' : 'Result follows the actual BTC/USD price movement.'} Result = amount × leverage × percentage move × 10; the displayed price is not artificially moved.
                 </p>
               </div>
 

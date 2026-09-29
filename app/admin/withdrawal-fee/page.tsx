@@ -64,7 +64,7 @@ export default function AdminWithdrawalFeePage() {
     };
 
     void loadSelectedUser();
-    const timer = window.setInterval(() => void loadSelectedUser(), 2000);
+    const timer = window.setInterval(() => void loadSelectedUser(), 15000);
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -128,6 +128,7 @@ export default function AdminWithdrawalFeePage() {
           const payload = await resp.json();
           const account = payload?.account ?? null;
           if (account) {
+            setAccountType(account.account_name === 'Digital wallet' || account.accountName === 'Digital wallet' || account.bank_name === 'Digital wallet' || account.bankName === 'Digital wallet' ? 'wallet' : 'bank');
             setBankName(account.bank_name ?? account.bankName ?? '');
             setAccountName(account.account_name ?? account.accountName ?? '');
             setAccountNumber(account.account_number ?? account.accountNumber ?? '');
@@ -141,7 +142,7 @@ export default function AdminWithdrawalFeePage() {
 
     fetchAccount();
     const channel = new BroadcastChannel('atlas-withdrawal-fee');
-    const pollTimer = window.setInterval(() => void fetchAccount(), 2000);
+    const pollTimer = window.setInterval(() => void fetchAccount(), 15000);
     const channelHandler = (event: MessageEvent) => {
       if (!event.data || event.data.userId !== selectedUserId) return;
       fetchAccount();
@@ -162,16 +163,16 @@ export default function AdminWithdrawalFeePage() {
       setMessage('Choose a user first before assigning a payment account.');
       return;
     }
-    if (!bankName.trim() || !accountName.trim() || !accountNumber.trim() || !reference.trim()) {
-      setMessage('Complete every account field before assigning payment details.');
+    if (!bankName.trim() || !accountNumber.trim() || (accountType === 'bank' && (!accountName.trim() || !reference.trim()))) {
+      setMessage(accountType === 'wallet' ? 'Enter the network name and network address.' : 'Complete every bank account field before assigning payment details.');
       return;
     }
 
     const account: FeeAccount = {
       bankName: bankName.trim(),
-      accountName: accountName.trim(),
+      accountName: accountType === 'wallet' ? 'Digital wallet' : accountName.trim(),
       accountNumber: accountNumber.trim(),
-      reference: reference.trim(),
+      reference: accountType === 'wallet' ? '' : reference.trim(),
       updatedAt: Date.now(),
     };
     void (async () => {
@@ -179,7 +180,7 @@ export default function AdminWithdrawalFeePage() {
         const resp = await fetch('/api/withdrawal-fee-accounts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: selectedUser.id, bankName: accountType === 'wallet' ? 'Digital wallet' : account.bankName, accountName: account.accountName, accountNumber: account.accountNumber, reference: account.reference }),
+          body: JSON.stringify({ userId: selectedUser.id, accountType, bankName: account.bankName, accountName: account.accountName, accountNumber: account.accountNumber, reference: account.reference }),
         });
         const payload = await resp.json();
         if (!resp.ok) throw new Error(payload?.error || 'Unable to assign payment account.');
@@ -265,27 +266,29 @@ export default function AdminWithdrawalFeePage() {
         <form onSubmit={handleAssign} className="space-y-5 rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
           <div>
             <label className="mb-2 block text-sm text-slate-300">Payment destination</label>
-            <select value={accountType} onChange={(event) => setAccountType(event.target.value as 'bank' | 'wallet')} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-white outline-none">
+            <select value={accountType} onChange={(event) => { setAccountType(event.target.value as 'bank' | 'wallet'); setBankName(''); setAccountName(''); setAccountNumber(''); setReference(''); }} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-white outline-none">
               <option value="bank">Bank account</option>
               <option value="wallet">Digital wallet</option>
             </select>
           </div>
           <div>
-            <label className="mb-2 block text-sm text-slate-300">{accountType === 'wallet' ? 'Wallet label' : 'Bank or payment institution'}</label>
-            <input value={bankName} onChange={(event) => setBankName(event.target.value)} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-white outline-none" placeholder={accountType === 'wallet' ? 'Wallet name or network' : 'Institution name'} />
+            <label className="mb-2 block text-sm text-slate-300">{accountType === 'wallet' ? 'Network name' : 'Bank or payment institution'}</label>
+            <input value={bankName} onChange={(event) => setBankName(event.target.value)} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-white outline-none" placeholder={accountType === 'wallet' ? 'e.g. Ethereum, TRC20' : 'Institution name'} />
           </div>
+          <div>
+            <label className="mb-2 block text-sm text-slate-300">{accountType === 'wallet' ? 'Network address' : 'Account number'}</label>
+            <input value={accountNumber} onChange={(event) => setAccountNumber(event.target.value)} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-white outline-none" placeholder={accountType === 'wallet' ? 'Wallet address on the selected network' : 'Bank account number'} />
+          </div>
+          {accountType === 'bank' ? <>
           <div>
             <label className="mb-2 block text-sm text-slate-300">Account name</label>
             <input value={accountName} onChange={(event) => setAccountName(event.target.value)} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-white outline-none" placeholder="Beneficiary or account name" />
           </div>
           <div>
-            <label className="mb-2 block text-sm text-slate-300">Account number or payment address</label>
-            <input value={accountNumber} onChange={(event) => setAccountNumber(event.target.value)} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-white outline-none" placeholder="Account number or wallet address" />
-          </div>
-          <div>
             <label className="mb-2 block text-sm text-slate-300">Payment reference</label>
             <input value={reference} onChange={(event) => setReference(event.target.value)} className="w-full rounded-2xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--bg-dark-navy)] px-4 py-3 text-sm text-white outline-none" placeholder="Reference the client must include" />
           </div>
+          </> : null}
           {message ? <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{message}</div> : null}
           <button type="submit" className="w-full rounded-2xl bg-[color:var(--primary-gold)] px-4 py-3 text-sm font-semibold text-[color:var(--bg-dark-navy)] transition hover:opacity-90">Assign payment account</button>
           <button type="button" onClick={handleResetAccount} className="w-full rounded-2xl border border-rose-400/40 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10">Reset assigned payment account</button>

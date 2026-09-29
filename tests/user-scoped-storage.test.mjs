@@ -126,7 +126,11 @@ test('live trade positions and history are isolated per user account', async () 
     assert.ok(getLiveTradePosition('user-1'));
     assert.equal(getLiveTradePosition('user-2'), null);
     assert.equal(getLiveTradeHistory('user-1').length, 1);
+    assert.match(getLiveTradeHistory('user-1')[0].id, /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i);
     assert.equal(getLiveTradeHistory('user-2').length, 0);
+
+    setLiveTradePosition(null, 'user-1');
+    assert.equal(getLiveTradePosition('user-1'), null);
   } finally {
     cleanup();
     delete globalThis.BroadcastChannel;

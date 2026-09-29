@@ -47,46 +47,28 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     markLanguageHydrated();
+    const forcedLanguage: Language = 'en';
+    setLanguageState(forcedLanguage);
+    setStoredLanguage(forcedLanguage);
+    document.documentElement.lang = 'en';
+
     const userId = getCurrentAccountId();
-
-    const initializeLanguage = async () => {
-      // Try to load from database first
-      const dbLanguage = await loadLanguageFromDatabase(userId);
-      if (dbLanguage) {
-        setLanguageState(dbLanguage);
-        document.documentElement.lang = dbLanguage === 'pt-BR' ? 'pt-BR' : 'en';
-        return;
-      }
-
-      // Fall back to localStorage
-      const storedLanguage = window.localStorage.getItem('atlas-language') === 'pt-BR' ? 'pt-BR' : getStoredLanguage();
-      setLanguageState(storedLanguage);
-      document.documentElement.lang = storedLanguage === 'pt-BR' ? 'pt-BR' : 'en';
-      
-      // Sync localStorage to database
-      if (userId) {
-        void syncLanguageToDatabase(userId, storedLanguage);
-      }
-    };
-
-    const timer = window.setTimeout(() => {
-      void initializeLanguage();
-    }, 0);
-
-    return () => window.clearTimeout(timer);
+    if (userId) {
+      void syncLanguageToDatabase(userId, forcedLanguage);
+    }
   }, []);
 
   const value = useMemo<LanguageContextValue>(() => ({
     language,
     setLanguage: (nextLanguage) => {
-      setLanguageState(nextLanguage);
-      setStoredLanguage(nextLanguage);
-      
-      // Sync to database
+      const forcedLanguage: Language = 'en';
+      setLanguageState(forcedLanguage);
+      setStoredLanguage(forcedLanguage);
+
       const userId = getCurrentAccountId();
-      void syncLanguageToDatabase(userId, nextLanguage);
-      
-      document.documentElement.lang = nextLanguage === 'pt-BR' ? 'pt-BR' : 'en';
+      void syncLanguageToDatabase(userId, forcedLanguage);
+
+      document.documentElement.lang = 'en';
     },
     t: (key) => translate(language, key),
   }), [language]);

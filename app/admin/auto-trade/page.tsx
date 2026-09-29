@@ -140,13 +140,12 @@ export default function AdminAutoTradePage() {
 
         {message ? <div className="rounded-3xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{message}</div> : null}
 
+        <ProfileGauge userId={selectedUserId} editable={true} />
+
         {!purchase ? (
           <div className="rounded-3xl border border-[color:var(--border-soft)] bg-[color:var(--surface)] p-8 text-center text-sm text-[var(--text-secondary)]">{tr('No auto-trade payment is awaiting review.')}</div>
         ) : (
           <div className="space-y-6">
-            {/* Profile Gauge */}
-            <ProfileGauge userId={selectedUserId} editable={true} />
-
             <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[rgba(4,16,33,0.94)] p-6 shadow-lg shadow-black/30">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>

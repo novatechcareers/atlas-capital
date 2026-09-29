@@ -75,7 +75,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { userId, type, position, history } = body || {};
+    const { userId, type, position, history, openedAt } = body || {};
 
     if (!userId || !type) {
       return NextResponse.json({ error: 'userId and type are required.' }, { status: 400 });
@@ -92,6 +92,19 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    if (type === 'position' && !position) {
+      let query = supabase
+        .from('live_trade_positions')
+        .delete()
+        .eq('user_id', userId);
+      if (Number.isFinite(Number(openedAt))) {
+        query = query.eq('opened_at', new Date(Number(openedAt)).toISOString());
+      }
+      const { error } = await query;
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ position: null }, { status: 200 });
+    }
+
     if (type === 'position' && position) {
       const { data, error } = await supabase
         .from('live_trade_positions')
@@ -105,7 +118,7 @@ export async function POST(req: Request) {
           pnl: Number(position.pnl ?? 0),
           opened_at: new Date(position.openedAt).toISOString(),
           closed_at: position.closeAt ? new Date(position.closeAt).toISOString() : null,
-          status: position.closeAt ? 'Closed' : 'Open',
+          status: 'Open',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' })
         .select('*')
@@ -129,6 +142,7 @@ export async function POST(req: Request) {
 
     if (type === 'history' && Array.isArray(history)) {
       const rows = history.map((entry: any) => ({
+        id: entry.id,
         user_id: userId,
         side: entry.side,
         amount: Number(entry.amount),

@@ -1,17 +1,56 @@
 'use client';
 
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { DashboardShell } from '@/components/dashboard-shell';
-import { CandlestickChart } from '@/components/candlestick-chart';
 import { formatCurrency, getStoredBalance, subscribeToBalance } from '@/lib/balance';
-import { getAutoTradeHistory } from '@/lib/auto-trade';
+import { subscribeToAutoTradeHistory } from '@/lib/auto-trade';
+import { getCurrentAccountId, getUserStorageKey } from '@/lib/auth';
+
+const CandlestickChart = dynamic(
+  () => import('@/components/candlestick-chart').then((module) => module.CandlestickChart),
+  { loading: () => <div className="h-96 animate-pulse rounded-[32px] bg-[color:var(--surface)]" /> },
+);
+
+type TransactionRecord = {
+  amount: unknown;
+  currency?: unknown;
+  status?: unknown;
+  note?: unknown;
+};
+
+function formatTransactionTotal(records: TransactionRecord[], acceptedStatuses: string[]) {
+  const totals = new Map<string, number>();
+
+  for (const record of records) {
+    const amount = Number(record.amount);
+    const status = String(record.status ?? '').toLowerCase();
+    if (!Number.isFinite(amount) || amount <= 0 || !acceptedStatuses.includes(status)) continue;
+
+    const currency = String(record.currency ?? 'USD').toUpperCase();
+    totals.set(currency, (totals.get(currency) ?? 0) + Math.round(amount * 100));
+  }
+
+  if (totals.size === 0) return formatCurrency(0);
+
+  return [...totals.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([currency, cents]) => {
+      try {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
+      } catch {
+        return `${(cents / 100).toFixed(2)} ${currency}`;
+      }
+    })
+    .join(' · ');
+}
 
 const summaryCards = [
   { label: 'BALANCE', value: undefined, subtitle: 'Live account total' },
   { label: 'PROFIT', value: undefined, subtitle: 'Auto-trade P&L history', href: '/dashboard/auto-trade' },
-  { label: 'BONUS', value: undefined, subtitle: 'Referral rewards', href: '/dashboard/subscription' },
-  { label: 'DEPOSITS', value: undefined, subtitle: 'Open deposit page', href: '/dashboard/deposit' },
+  { label: 'WITHDRAWAL', value: undefined, subtitle: 'Withdrawal requests', href: '/dashboard/withdrawal' },
+  { label: 'DEPOSITS', value: undefined, subtitle: 'Confirmed deposits', href: '/dashboard/deposit' },
 ];
 
 const quickActions = [
@@ -32,6 +71,8 @@ const tradeTickerItems = [
 export default function DashboardPage() {
   const [balance, setBalance] = useState(0);
   const [botProfit, setBotProfit] = useState(0);
+  const [depositTotal, setDepositTotal] = useState('—');
+  const [withdrawalTotal, setWithdrawalTotal] = useState('—');
 
   useEffect(() => {
     setBalance(getStoredBalance());
@@ -40,14 +81,62 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const syncProfit = () => {
-      const total = getAutoTradeHistory().reduce((sum, entry) => sum + entry.result, 0);
+    const syncProfit = (history: Array<{ result: number }>) => {
+      const total = history.reduce((sum, entry) => sum + entry.result, 0);
       setBotProfit(Math.round(total * 100) / 100);
     };
 
-    syncProfit();
-    const timer = window.setInterval(syncProfit, 1000);
-    return () => window.clearInterval(timer);
+    return subscribeToAutoTradeHistory(syncProfit);
+  }, []);
+
+  useEffect(() => {
+    const userId = getCurrentAccountId();
+    if (!userId) {
+      setDepositTotal(formatCurrency(0));
+      setWithdrawalTotal(formatCurrency(0));
+      return;
+    }
+
+    let active = true;
+    const syncTransactions = async () => {
+      const [depositsResult, withdrawalsResult] = await Promise.allSettled([
+        fetch(`/api/deposit-requests?userId=${encodeURIComponent(userId)}`).then(async (response) => {
+          if (!response.ok) throw new Error('Unable to load deposits');
+          const payload = await response.json();
+          return Array.isArray(payload?.deposits) ? payload.deposits as TransactionRecord[] : [];
+        }),
+        fetch(`/api/withdrawals?userId=${encodeURIComponent(userId)}`).then(async (response) => {
+          if (!response.ok) throw new Error('Unable to load withdrawals');
+          const payload = await response.json();
+          return Array.isArray(payload?.withdrawals) ? payload.withdrawals as TransactionRecord[] : [];
+        }),
+      ]);
+
+      if (!active) return;
+
+      const deposits = depositsResult.status === 'fulfilled' ? depositsResult.value : [];
+      const withdrawalRows = withdrawalsResult.status === 'fulfilled'
+        ? withdrawalsResult.value
+        : (() => {
+            try {
+              const stored = window.localStorage.getItem(getUserStorageKey('atlas-withdrawal-requests', userId));
+              const parsed = stored ? JSON.parse(stored) : [];
+              return Array.isArray(parsed) ? parsed as TransactionRecord[] : [];
+            } catch {
+              return [];
+            }
+          })();
+
+      setDepositTotal(formatTransactionTotal(deposits, ['confirmed', 'approved']));
+      setWithdrawalTotal(formatTransactionTotal(withdrawalRows, ['fee pending', 'pending', 'approved']));
+    };
+
+    void syncTransactions();
+    const timer = window.setInterval(() => void syncTransactions(), 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const balanceCards = useMemo(
@@ -57,9 +146,13 @@ export default function DashboardPage() {
           ? { ...card, value: formatCurrency(balance) }
           : card.label === 'PROFIT'
             ? { ...card, value: formatCurrency(botProfit) }
+            : card.label === 'DEPOSITS'
+              ? { ...card, value: depositTotal }
+              : card.label === 'WITHDRAWAL'
+                ? { ...card, value: withdrawalTotal }
           : card,
       ),
-    [balance, botProfit],
+    [balance, botProfit, depositTotal, withdrawalTotal],
   );
 
   return (
@@ -74,7 +167,7 @@ export default function DashboardPage() {
                   <p className="text-xs font-semibold uppercase tracking-[0.45em] text-[color:var(--text-secondary)]">{card.label}</p>
                   <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                 </div>
-                <p className="mt-5 text-4xl font-semibold leading-none text-[color:var(--text-primary)]">
+                <p className="mt-5 break-words text-2xl font-semibold leading-tight text-[color:var(--text-primary)] sm:text-3xl">
                   {card.value ?? '—'}
                 </p>
                 <p className="mt-3 text-sm text-[color:var(--text-secondary)]">{card.subtitle}</p>

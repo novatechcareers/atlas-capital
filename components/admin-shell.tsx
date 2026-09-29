@@ -18,6 +18,7 @@ const links = [
   { href: '/admin', label: 'Home', icon: '🏠' },
   { href: '/admin/deposit', label: 'Deposit admin', icon: '🏦' },
   { href: '/admin/auto-trade', label: 'Auto trade', icon: '🤖' },
+  { href: '/admin/live-trade', label: 'Live trade', icon: '📈' },
   { href: '/admin/subscription', label: 'Subscriptions', icon: '◈' },
   { href: '/admin/withdrawal-fee', label: 'Withdrawal fee', icon: '💳' },
   { href: '/admin/verify-account', label: 'Verify accounts', icon: '📝' },

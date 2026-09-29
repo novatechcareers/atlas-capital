@@ -1,6 +1,8 @@
 import { getCurrentAccountId, getUserStorageKey } from './auth';
 
 export type ProfileType = 'conservative' | 'balanced' | 'aggressive';
+export type TradingProfileScope = 'auto' | 'live';
+export type LiveTradeOutcomeMode = 'market' | 'profit' | 'loss';
 
 export type TradingProfile = {
   id: string;
@@ -10,12 +12,25 @@ export type TradingProfile = {
   lossRate: number; // 0-100
   minProfit: number;
   maxLoss: number;
+  outcomeMode?: LiveTradeOutcomeMode;
   createdAt: number;
   updatedAt: number;
 };
 
 export const TRADING_PROFILE_STORAGE_KEY = 'atlas-trading-profile';
 export const TRADING_PROFILE_CHANNEL = 'atlas-trading-profile';
+
+function getProfileStorageKey(scope: TradingProfileScope) {
+  return scope === 'live' ? 'atlas-live-trading-profile' : TRADING_PROFILE_STORAGE_KEY;
+}
+
+function getProfileChannel(scope: TradingProfileScope) {
+  return scope === 'live' ? 'atlas-live-trading-profile' : TRADING_PROFILE_CHANNEL;
+}
+
+function getProfileEndpoint(scope: TradingProfileScope) {
+  return scope === 'live' ? '/api/live-trading-profile' : '/api/trading-profile';
+}
 
 // Default profiles with 55/45 loss/profit ratio
 export const DEFAULT_PROFILES: Record<ProfileType, Omit<TradingProfile, 'id' | 'userId' | 'createdAt' | 'updatedAt'>> = {
@@ -42,11 +57,11 @@ export const DEFAULT_PROFILES: Record<ProfileType, Omit<TradingProfile, 'id' | '
   },
 };
 
-export function getTradingProfile(userId?: string | null): TradingProfile | null {
+export function getTradingProfile(userId?: string | null, scope: TradingProfileScope = 'auto'): TradingProfile | null {
   if (typeof window === 'undefined') return null;
 
   const resolvedUserId = userId ?? getCurrentAccountId();
-  const storageKey = getUserStorageKey(TRADING_PROFILE_STORAGE_KEY, resolvedUserId);
+  const storageKey = getUserStorageKey(getProfileStorageKey(scope), resolvedUserId);
   const stored = window.localStorage.getItem(storageKey);
   if (!stored) return null;
 
@@ -58,14 +73,14 @@ export function getTradingProfile(userId?: string | null): TradingProfile | null
   }
 }
 
-export function saveTradingProfile(profile: TradingProfile, userId?: string | null): TradingProfile {
+export function saveTradingProfile(profile: TradingProfile, userId?: string | null, scope: TradingProfileScope = 'auto'): TradingProfile {
   if (typeof window === 'undefined') return profile;
 
   const resolvedUserId = userId ?? getCurrentAccountId();
-  const storageKey = getUserStorageKey(TRADING_PROFILE_STORAGE_KEY, resolvedUserId);
+  const storageKey = getUserStorageKey(getProfileStorageKey(scope), resolvedUserId);
   window.localStorage.setItem(storageKey, JSON.stringify(profile));
   
-  const channel = new BroadcastChannel(TRADING_PROFILE_CHANNEL);
+  const channel = new BroadcastChannel(getProfileChannel(scope));
   channel.postMessage({ type: 'profile-updated', profile, userId: resolvedUserId });
   channel.close();
 
@@ -74,12 +89,13 @@ export function saveTradingProfile(profile: TradingProfile, userId?: string | nu
 
 export function subscribeToTradingProfile(
   callback: (profile: TradingProfile | null) => void,
-  userId?: string | null
+  userId?: string | null,
+  scope: TradingProfileScope = 'auto'
 ): () => void {
   if (typeof window === 'undefined') return () => {};
 
   const resolvedUserId = userId ?? getCurrentAccountId();
-  const channel = new BroadcastChannel(TRADING_PROFILE_CHANNEL);
+  const channel = new BroadcastChannel(getProfileChannel(scope));
 
   const handleMessage = (event: MessageEvent) => {
     if (event.data?.type === 'profile-updated' && event.data?.userId === resolvedUserId) {
@@ -94,21 +110,22 @@ export function subscribeToTradingProfile(
   };
 }
 
-export async function syncTradingProfileFromServer(userId?: string | null): Promise<TradingProfile | null> {
+export async function syncTradingProfileFromServer(userId?: string | null, scope: TradingProfileScope = 'auto'): Promise<TradingProfile | null> {
   if (typeof window === 'undefined') return null;
 
   const resolvedUserId = userId ?? getCurrentAccountId();
   if (!resolvedUserId) return null;
 
   try {
-    const response = await fetch(`/api/trading-profile?userId=${encodeURIComponent(resolvedUserId)}`);
+    const response = await fetch(`${getProfileEndpoint(scope)}?userId=${encodeURIComponent(resolvedUserId)}`);
     if (!response.ok) return null;
 
     const data = await response.json();
     const serverProfile = data?.profile;
 
     if (!serverProfile) {
-      const storageKey = getUserStorageKey(TRADING_PROFILE_STORAGE_KEY, resolvedUserId);
+      if (data?.unavailable) return getTradingProfile(resolvedUserId, scope);
+      const storageKey = getUserStorageKey(getProfileStorageKey(scope), resolvedUserId);
       window.localStorage.removeItem(storageKey);
       return null;
     }
@@ -121,11 +138,12 @@ export async function syncTradingProfileFromServer(userId?: string | null): Prom
       lossRate: Number(serverProfile.loss_rate),
       minProfit: Number(serverProfile.min_profit),
       maxLoss: Number(serverProfile.max_loss),
+      outcomeMode: serverProfile.outcome_mode === 'profit' || serverProfile.outcome_mode === 'loss' ? serverProfile.outcome_mode : 'market',
       createdAt: new Date(serverProfile.created_at).getTime(),
       updatedAt: new Date(serverProfile.updated_at).getTime(),
     };
 
-    saveTradingProfile(normalized, resolvedUserId);
+    saveTradingProfile(normalized, resolvedUserId, scope);
     return normalized;
   } catch {
     return null;
@@ -146,13 +164,13 @@ export function calculateTradeResult(profile: TradingProfile): number {
 }
 
 export function calculateProfileClosePnl(grossPnl: number, profile: TradingProfile | null): number {
-  const magnitude = Math.max(0.1, Math.abs(grossPnl));
+  const roundedGrossPnl = Math.round(grossPnl * 100) / 100;
+  if (!Number.isFinite(roundedGrossPnl) || roundedGrossPnl === 0) return 0;
   if (!profile) return Math.round(grossPnl * 100) / 100;
 
-  const isWin = Math.random() * 100 < profile.winRate;
-  const limit = isWin ? profile.minProfit : profile.maxLoss;
-  const adjusted = Math.min(magnitude, Math.max(0.1, limit));
-  return Math.round((isWin ? adjusted : -adjusted) * 100) / 100;
+  const limit = roundedGrossPnl > 0 ? profile.minProfit : profile.maxLoss;
+  const adjusted = Math.min(Math.abs(roundedGrossPnl), Math.max(0, limit));
+  return Math.sign(roundedGrossPnl) * Math.round(adjusted * 100) / 100;
 }
 
 // Get default profile for new users

@@ -132,7 +132,7 @@ function WithdrawalFeeContent() {
       }
     };
     const channel = new BroadcastChannel('atlas-withdrawal-fee');
-    const pollTimer = window.setInterval(() => void syncAccount(), 2000);
+    const pollTimer = window.setInterval(() => void syncAccount(), 15000);
     window.addEventListener('storage', syncAccount);
     channel.addEventListener('message', syncAccount);
     return () => {
@@ -254,10 +254,19 @@ function WithdrawalFeeContent() {
           {feeAccount ? (
             <div className="mt-6 rounded-3xl border border-emerald-400/30 bg-emerald-500/10 p-5 text-sm text-emerald-100">
               <p className="font-semibold">Payment account assigned</p>
-              <p className="mt-3">Bank: {feeAccount.bankName}</p>
-              <p className="mt-2">Account name: {feeAccount.accountName}</p>
-              <p className="mt-2">Account number: {feeAccount.accountNumber}</p>
-              <p className="mt-2">Reference: {feeAccount.reference}</p>
+              {feeAccount.accountName === 'Digital wallet' || feeAccount.bankName === 'Digital wallet' ? (
+                <>
+                  <p className="mt-3">Network: {feeAccount.bankName}</p>
+                  <p className="mt-2 break-all">Network address: {feeAccount.accountNumber}</p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-3">Bank: {feeAccount.bankName}</p>
+                  <p className="mt-2">Account name: {feeAccount.accountName}</p>
+                  <p className="mt-2">Account number: {feeAccount.accountNumber}</p>
+                  <p className="mt-2">Reference: {feeAccount.reference}</p>
+                </>
+              )}
               {request.status === 'Fee pending' ? (
                 <button type="button" onClick={handleSentMoney} className="mt-5 w-full rounded-2xl bg-emerald-500 px-4 py-3 font-semibold text-slate-950 transition hover:opacity-90">
                   I have sent the money

@@ -272,6 +272,15 @@ export default function RegisterPage() {
             Sign in
           </Link>
         </p>
+
+        <div className="mt-4">
+          <Link
+            href="/"
+            className="inline-flex w-full items-center justify-center rounded-2xl border border-[color:var(--primary-gold)]/40 bg-[color:var(--surface)]/5 px-4 py-3 text-sm font-semibold text-[color:var(--primary-gold)] transition hover:bg-[color:var(--primary-gold)]/10"
+          >
+            ← Back to home
+          </Link>
+        </div>
       </div>
 
       {isSuccess ? (

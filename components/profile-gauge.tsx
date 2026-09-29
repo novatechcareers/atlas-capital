@@ -1,28 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { TradingProfile, ProfileType } from '@/lib/trading-profile';
+import type { TradingProfile, ProfileType, TradingProfileScope } from '@/lib/trading-profile';
 import { getTradingProfile, saveTradingProfile, DEFAULT_PROFILES, syncTradingProfileFromServer, getDefaultProfile } from '@/lib/trading-profile';
 
 interface ProfileGaugeProps {
   userId: string | null;
   onProfileChange?: (profile: TradingProfile) => void;
   editable?: boolean;
+  scope?: TradingProfileScope;
 }
 
-export function ProfileGauge({ userId, onProfileChange, editable = false }: ProfileGaugeProps) {
+export function ProfileGauge({ userId, onProfileChange, editable = false, scope = 'auto' }: ProfileGaugeProps) {
   const [profile, setProfile] = useState<TradingProfile | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showAdjustments, setShowAdjustments] = useState(false);
+  const [outcomeError, setOutcomeError] = useState('');
 
   useEffect(() => {
     if (!userId) return;
-    const stored = getTradingProfile(userId) ?? getDefaultProfile(userId);
+    const stored = getTradingProfile(userId, scope) ?? getDefaultProfile(userId);
     setProfile(stored);
-    void syncTradingProfileFromServer(userId).then((latest) => {
+    void syncTradingProfileFromServer(userId, scope).then((latest) => {
       if (latest) setProfile(latest);
     });
-  }, [userId]);
+  }, [userId, scope]);
 
   const handleProfileTypeChange = async (newType: ProfileType) => {
     if (!userId || !profile || isUpdating) return;
@@ -37,7 +39,8 @@ export function ProfileGauge({ userId, onProfileChange, editable = false }: Prof
       };
 
       // Update in database
-      const response = await fetch(`/api/trading-profile?userId=${encodeURIComponent(userId)}`, {
+      const endpoint = scope === 'live' ? '/api/live-trading-profile' : '/api/trading-profile';
+      const response = await fetch(`${endpoint}?userId=${encodeURIComponent(userId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -52,7 +55,7 @@ export function ProfileGauge({ userId, onProfileChange, editable = false }: Prof
       if (!response.ok) throw new Error('Unable to save trading profile.');
 
       setProfile(updated);
-      saveTradingProfile(updated, userId);
+      saveTradingProfile(updated, userId, scope);
       onProfileChange?.(updated);
     } catch (err) {
       console.error('Failed to update profile:', err);
@@ -78,7 +81,8 @@ export function ProfileGauge({ userId, onProfileChange, editable = false }: Prof
         updatedAt: Date.now(),
       };
 
-      const response = await fetch(`/api/trading-profile?userId=${encodeURIComponent(userId)}`, {
+      const endpoint = scope === 'live' ? '/api/live-trading-profile' : '/api/trading-profile';
+      const response = await fetch(`${endpoint}?userId=${encodeURIComponent(userId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -93,10 +97,46 @@ export function ProfileGauge({ userId, onProfileChange, editable = false }: Prof
       if (!response.ok) throw new Error('Unable to save trading profile value.');
 
       setProfile(updated);
-      saveTradingProfile(updated, userId);
+      saveTradingProfile(updated, userId, scope);
       onProfileChange?.(updated);
     } catch (err) {
       console.error('Failed to update value:', err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleLiveOutcomeChange = async (outcomeMode: 'profit' | 'loss') => {
+    if (!userId || !profile || isUpdating) return;
+    setIsUpdating(true);
+    setOutcomeError('');
+
+    try {
+      const updated: TradingProfile = { ...profile, outcomeMode, updatedAt: Date.now() };
+      const response = await fetch(`/api/live-trading-profile?userId=${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: profile.id,
+          profileType: profile.profileType,
+          winRate: profile.winRate,
+          lossRate: profile.lossRate,
+          minProfit: profile.minProfit,
+          maxLoss: profile.maxLoss,
+          outcomeMode,
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || payload?.error || 'Unable to update live-trade outcome.');
+      }
+
+      setProfile(updated);
+      saveTradingProfile(updated, userId, 'live');
+      onProfileChange?.(updated);
+    } catch (error) {
+      console.error('Failed to update live-trade outcome:', error);
+      setOutcomeError(error instanceof Error ? error.message : 'Unable to update live-trade outcome.');
     } finally {
       setIsUpdating(false);
     }
@@ -109,10 +149,11 @@ export function ProfileGauge({ userId, onProfileChange, editable = false }: Prof
 
   return (
     <div className="rounded-3xl border border-[color:var(--primary-gold)]/20 bg-[color:var(--surface-elevated)] p-6">
-      <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Trading Profile</p>
+      <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">{scope === 'live' ? 'Live Trade Outcome Controls' : 'Auto-Trade Outcome Controls'}</p>
+      {editable ? <p className="mt-2 text-sm text-[color:var(--text-secondary)]">These settings apply only to {scope === 'live' ? 'live trade' : 'auto trade'} for the selected account.</p> : null}
       
       {/* Profile Type Selector */}
-      {editable && (
+      {editable && scope !== 'live' && (
         <div className="mt-4">
           <button
             type="button"
@@ -140,8 +181,29 @@ export function ProfileGauge({ userId, onProfileChange, editable = false }: Prof
         </div>
       )}
 
-      {/* Win/Loss Gauge */}
       <div className="mt-6 space-y-4">
+        {scope === 'live' ? (
+          <>
+            <p className="text-sm text-[color:var(--text-secondary)]">Choose the result direction. The amount is calculated from trade amount × leverage × actual BTC/USD percentage movement × 10. The displayed price is not adjusted.</p>
+            {editable ? <div className="grid grid-cols-2 gap-3">
+              {(['profit', 'loss'] as const).map((outcome) => (
+                <button
+                  key={outcome}
+                  type="button"
+                  onClick={() => void handleLiveOutcomeChange(outcome)}
+                  disabled={isUpdating}
+                  aria-pressed={(profile.outcomeMode ?? 'market') === outcome}
+                  className={`rounded-2xl px-4 py-3 text-sm font-semibold capitalize transition disabled:cursor-wait disabled:opacity-60 ${(profile.outcomeMode ?? 'market') === outcome ? outcome === 'profit' ? 'bg-emerald-500 text-slate-950' : 'bg-rose-500 text-slate-950' : 'border border-[color:var(--border-soft)] text-[color:var(--text-secondary)] hover:border-[color:var(--primary-gold)]'}`}
+                >
+                  {outcome === 'profit' ? 'Profit' : 'Loss'}
+                </button>
+              ))}
+            </div> : <p className="font-semibold capitalize text-[color:var(--text-primary)]">{profile.outcomeMode ?? 'market'}</p>}
+            {outcomeError ? <p role="alert" className="text-sm text-rose-300">{outcomeError}</p> : null}
+          </>
+        ) : null}
+        {scope !== 'live' ? <>
+        {/* Win/Loss Gauge */}
         <div>
           <div className="flex justify-between text-sm mb-2">
             <span className="text-[color:var(--text-secondary)]">Win Rate</span>
@@ -191,15 +253,18 @@ export function ProfileGauge({ userId, onProfileChange, editable = false }: Prof
             />
           )}
         </div>
+        </> : null}
 
-        {editable && (
+        {editable && scope !== 'live' && (
           <>
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-[color:var(--text-secondary)]">Min Profit</span>
+                <span className="text-[color:var(--text-secondary)]">{scope === 'live' ? 'Maximum profit' : 'Min Profit'}</span>
                 <span>${profile.minProfit.toFixed(2)}</span>
               </div>
+              <label className="sr-only" htmlFor={`trade-profit-cap-${scope}`}>{scope === 'live' ? 'Maximum live-trade profit' : 'Minimum profit'}</label>
               <input
+                id={`trade-profit-cap-${scope}`}
                 type="number"
                 min="0"
                 max="1000"
@@ -216,7 +281,9 @@ export function ProfileGauge({ userId, onProfileChange, editable = false }: Prof
                 <span className="text-[color:var(--text-secondary)]">Max Loss</span>
                 <span>${profile.maxLoss.toFixed(2)}</span>
               </div>
+              <label className="sr-only" htmlFor={`trade-loss-cap-${scope}`}>{scope === 'live' ? 'Maximum live-trade loss' : 'Maximum loss'}</label>
               <input
+                id={`trade-loss-cap-${scope}`}
                 type="number"
                 min="0"
                 max="1000"

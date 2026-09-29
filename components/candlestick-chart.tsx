@@ -66,7 +66,7 @@ export function CandlestickChart() {
 
         return [...prev.slice(1), newCandle];
       });
-    }, 2500);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, []);

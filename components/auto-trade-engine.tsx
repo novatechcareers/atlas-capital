@@ -70,7 +70,7 @@ export function AutoTradeEngine() {
       void syncTradingProfileFromServer(userId).then((nextProfile) => {
         profile = nextProfile;
       });
-    }, 2000);
+    }, 15000);
 
     const timer = window.setInterval(createTrade, 8000);
 

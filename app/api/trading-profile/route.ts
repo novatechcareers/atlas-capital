@@ -34,11 +34,12 @@ export async function GET(request: Request) {
         apikey: SERVICE_ROLE_KEY,
         Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
       },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(2500),
     });
 
     if (!response.ok) {
-      return NextResponse.json({ profile: null });
+      console.error('Unable to load trading profile:', await response.text());
+      return NextResponse.json({ profile: null, unavailable: true });
     }
 
     const profiles = await response.json();
@@ -46,8 +47,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ profile });
   } catch (error) {
-    console.error('Failed to fetch trading profile:', error);
-    return NextResponse.json({ profile: null });
+    if (!(error instanceof Error && error.name === 'TimeoutError')) {
+      console.error('Failed to fetch trading profile:', error);
+    }
+    return NextResponse.json({ profile: null, unavailable: true });
   }
 }
 

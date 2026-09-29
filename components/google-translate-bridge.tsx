@@ -16,21 +16,16 @@ declare global {
   }
 }
 
-function applyGoogleTranslateCookie(language: 'en' | 'pt-BR') {
-  const target = language === 'pt-BR' ? 'pt' : 'en';
-  const value = `/en/${target}`;
-
-  document.cookie = `googtrans=${encodeURIComponent(value)}; path=/; SameSite=Lax`;
-  document.cookie = `googtrans=${encodeURIComponent(value)}; path=/; domain=${window.location.hostname}; SameSite=Lax`;
+function clearGoogleTranslateCookies() {
+  const cookieNames = ['googtrans', 'googtrans\\x2F', 'googtrans_disabled'];
+  cookieNames.forEach((cookieName) => {
+    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+  });
 }
 
-function applyGoogleTranslateLanguage(language: 'en' | 'pt-BR') {
-  const select = document.querySelector<HTMLSelectElement>('.goog-te-combo');
-  if (!select) return;
-
-  const target = language === 'pt-BR' ? 'pt' : 'en';
-  if (select.value !== target) select.value = target;
-  select.dispatchEvent(new Event('change', { bubbles: true }));
+function applyGoogleTranslateCookie(language: 'en' | 'pt-BR') {
+  clearGoogleTranslateCookies();
 }
 
 export function GoogleTranslateBridge() {
@@ -39,6 +34,8 @@ export function GoogleTranslateBridge() {
   const scriptLoadedRef = useRef(false);
 
   useEffect(() => {
+    clearGoogleTranslateCookies();
+
     window.googleTranslateElementInit = () => {
       if (window.google?.translate?.TranslateElement) {
         const root = document.getElementById('google_translate_element');
@@ -46,38 +43,31 @@ export function GoogleTranslateBridge() {
 
         root.innerHTML = '';
         new window.google.translate.TranslateElement(
-          { pageLanguage: 'en', includedLanguages: 'en,pt', autoDisplay: false },
+          { pageLanguage: 'en', includedLanguages: 'en,pt', autoDisplay: true },
           'google_translate_element',
         );
       }
     };
 
-    applyGoogleTranslateCookie(language);
     window.googleTranslateElementInit?.();
-    const timer = window.setTimeout(() => applyGoogleTranslateLanguage(language), 250);
-    return () => window.clearTimeout(timer);
   }, [language]);
 
-  // Reinitialize Google Translate when pathname changes (page navigation)
   useEffect(() => {
     if (scriptLoadedRef.current) {
-      // Add a small delay to ensure DOM content is fully loaded
-      const timer = setTimeout(() => applyGoogleTranslateLanguage(language), 350);
-      return () => clearTimeout(timer);
+      clearGoogleTranslateCookies();
     }
   }, [language, pathname]);
 
   return (
     <>
-      <div id="google_translate_element" className="hidden" aria-hidden="true" />
+      <div id="google_translate_element" className="ml-auto flex items-center justify-center" aria-label="Google Translate" />
       <Script
         src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
-        strategy="afterInteractive"
+        strategy="lazyOnload"
         onLoad={() => {
           scriptLoadedRef.current = true;
-          applyGoogleTranslateCookie(language);
+          clearGoogleTranslateCookies();
           window.googleTranslateElementInit?.();
-          window.setTimeout(() => applyGoogleTranslateLanguage(language), 250);
         }}
       />
     </>

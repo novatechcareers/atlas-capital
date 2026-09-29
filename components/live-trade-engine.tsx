@@ -6,9 +6,11 @@ import { adjustBalanceFromServer } from '@/lib/balance';
 import {
   addLiveTradeHistoryEntry,
   calculateLiveTradePnl,
+  claimLiveTradeSettlement,
   fetchMarketPrice,
   getLiveTradePosition,
   getLiveTradePrice,
+  releaseLiveTradeSettlement,
   setLiveTradePosition,
   setLiveTradePrice,
   type LiveTradePosition,
@@ -17,33 +19,35 @@ import {
   getTradingProfile,
   subscribeToTradingProfile,
   syncTradingProfileFromServer,
-  calculateProfileClosePnl,
   type TradingProfile,
 } from '@/lib/trading-profile';
 
 export function LiveTradeEngine() {
   useEffect(() => {
     let engineInterval: number | null = null;
-    let marketPriceInterval: number | null = null;
     let marketRefreshInterval: number | null = null;
     let storageHandler: ((event: StorageEvent) => void) | null = null;
     let started = false;
-    let profile: TradingProfile | null = getTradingProfile();
+    let quoteRequestInFlight = false;
+    let profile: TradingProfile | null = getTradingProfile(undefined, 'live');
     const userId = getCurrentAccountId();
 
     const startEngineForUser = (userId: string) => {
       if (!userId || started) return;
       started = true;
+      void syncTradingProfileFromServer(userId, 'live').then((nextProfile) => {
+        if (nextProfile) profile = nextProfile;
+      });
 
       const syncMarketPrice = async () => {
-        const marketPrice = await fetchMarketPrice();
-        if (marketPrice > 0) setLiveTradePrice(marketPrice);
-      };
-
-      const tickMarketPrice = () => {
-        const currentPrice = getLiveTradePrice();
-        const movement = (Math.random() - 0.5) * 0.0004;
-        setLiveTradePrice(Math.round(currentPrice * (1 + movement) * 100) / 100);
+        if (quoteRequestInFlight) return;
+        quoteRequestInFlight = true;
+        try {
+          const marketPrice = await fetchMarketPrice();
+          if (marketPrice > 0) setLiveTradePrice(marketPrice);
+        } finally {
+          quoteRequestInFlight = false;
+        }
       };
 
       const updatePosition = () => {
@@ -51,15 +55,15 @@ export function LiveTradeEngine() {
         if (!position) return;
 
         const price = getLiveTradePrice();
-        const pnl = calculateLiveTradePnl(position, price);
+        const pnl = calculateLiveTradePnl(position, price, profile?.outcomeMode ?? 'market');
 
         if (position.closeAt && Date.now() >= position.closeAt) {
-          const executionFee = Math.round(position.amount * 0.0125 * 100) / 100;
-          const slippage = Math.round(Math.abs(pnl) * Math.random() * 0.08 * 100) / 100;
-          const profilePnl = calculateProfileClosePnl(pnl, profile);
-          const realizedPnl = Math.round((profilePnl - executionFee - slippage) * 100) / 100;
+          if (!claimLiveTradeSettlement(position.openedAt, userId)) return;
+          const realizedPnl = pnl;
           void adjustBalanceFromServer(realizedPnl, userId).then((nextBalance) => {
             if (nextBalance === null) return;
+            const latestPosition = getLiveTradePosition(userId);
+            if (!latestPosition || latestPosition.openedAt !== position.openedAt) return;
             addLiveTradeHistoryEntry({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             side: position.side,
@@ -72,8 +76,8 @@ export function LiveTradeEngine() {
             closedAt: Date.now(),
             status: 'Closed',
             }, userId);
-          });
-          setLiveTradePosition(null, userId);
+            setLiveTradePosition(null, userId);
+          }).finally(() => releaseLiveTradeSettlement(position.openedAt, userId));
           return;
         }
 
@@ -88,15 +92,11 @@ export function LiveTradeEngine() {
 
       engineInterval = window.setInterval(() => {
         updatePosition();
-      }, 2500) as unknown as number;
-
-      marketPriceInterval = window.setInterval(() => {
-        tickMarketPrice();
-      }, 1_500) as unknown as number;
+      }, 2000) as unknown as number;
 
       marketRefreshInterval = window.setInterval(() => {
         void syncMarketPrice();
-      }, 15_000) as unknown as number;
+      }, 2000) as unknown as number;
 
       void syncMarketPrice();
 
@@ -104,7 +104,7 @@ export function LiveTradeEngine() {
         const position = getLiveTradePosition(userId);
         if (!position) return;
         const price = getLiveTradePrice();
-        const pnl = calculateLiveTradePnl(position, price);
+        const pnl = calculateLiveTradePnl(position, price, profile?.outcomeMode ?? 'market');
         setLiveTradePosition({ ...position, currentPrice: price, pnl }, userId);
       };
 
@@ -119,13 +119,13 @@ export function LiveTradeEngine() {
 
     const unsubscribeProfile = subscribeToTradingProfile((nextProfile) => {
       profile = nextProfile;
-    }, userId);
+    }, userId, 'live');
 
     const profileSyncTimer = window.setInterval(() => {
-      void syncTradingProfileFromServer(userId).then((nextProfile) => {
+      void syncTradingProfileFromServer(userId, 'live').then((nextProfile) => {
         profile = nextProfile;
       });
-    }, 2000);
+    }, 15000);
 
     const poll = window.setInterval(() => {
       const userId = getCurrentAccountId();
@@ -137,7 +137,6 @@ export function LiveTradeEngine() {
 
     return () => {
       if (engineInterval) window.clearInterval(engineInterval);
-      if (marketPriceInterval) window.clearInterval(marketPriceInterval);
       if (marketRefreshInterval) window.clearInterval(marketRefreshInterval);
       if (storageHandler) window.removeEventListener('storage', storageHandler);
       window.clearInterval(poll);

@@ -77,8 +77,10 @@ export function DashboardShell({
       )}
 
       <aside className={`fixed left-0 top-0 z-30 flex h-screen w-64 flex-col border-r border-[color:var(--border-soft)] bg-[color:var(--surface)] p-4 overflow-y-auto transition-transform duration-300 lg:static lg:z-auto lg:w-72 lg:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          <div className="mb-8 flex items-center gap-1">
-            <Image src="/image/icon.png" alt="Atlas Capital icon" width={96} height={96} className="h-24 w-24 object-contain" />
+          <div className="mb-8 flex items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[1.4rem] border border-[color:var(--primary-gold)]/30 bg-[linear-gradient(135deg,rgba(201,169,97,0.18),rgba(201,169,97,0.04))] shadow-[0_10px_24px_rgba(201,169,97,0.18)]">
+              <Image src="/image/icon.png" alt="Atlas Capital icon" width={64} height={64} className="h-10 w-10 object-contain" />
+            </div>
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[color:var(--primary-gold)]">Atlas</p>
               <p className="text-lg font-semibold text-[var(--text-primary)]">Capital</p>

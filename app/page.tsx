@@ -7,9 +7,36 @@ import { LanguageSelector } from '../components/language-selector';
 import { useLanguage } from '../components/language-provider';
 import { SUPPORT_EMAIL } from '@/lib/auth';
 
+function SocialIcon({ type }: { type: 'telegram' | 'whatsapp' }) {
+  const commonProps = {
+    viewBox: '0 0 24 24',
+    fill: 'currentColor',
+    className: 'h-5 w-5',
+    'aria-hidden': true,
+  };
+
+  if (type === 'telegram') {
+    return (
+      <svg {...commonProps}>
+        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm4.89 6.6-1.64 7.71a1.1 1.1 0 0 1-1.74.58l-2.9-2.12-1.39 1.33a.79.79 0 0 1-.63.27l.22-3.18 5.67-5.11c.25-.22-.05-.34-.36-.12l-7 4.42-3-.94c-.69-.22-.7-.69.14-.98l12.4-4.78c.58-.22 1.08.13.89.9Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...commonProps}>
+      <path d="M12.04 2C6.57 2 2.15 6.42 2.15 11.9c0 1.96.58 3.88 1.58 5.52L2 22l4.86-1.57A9.8 9.8 0 0 0 12.04 22c5.47 0 9.9-4.42 9.9-9.9S17.51 2 12.04 2Zm5.8 13.49c-.2.56-1.17 1.03-1.61 1.1-.42.07-.96.1-3.1-.67-2.62-1.13-4.34-3.95-4.47-4.15-.14-.2-1.15-1.53-1.15-2.9 0-1.37.72-2.06 1-2.35.2-.18.45-.22.59-.22h.42c.14 0 .34-.05.54.42.2.49.68 1.68.74 1.81.06.13.1.29.03.47-.07.18-.13.27-.27.42l-.34.41c-.1.1-.2.21-.09.4.11.2.49.82 1.07 1.33.74.66 1.36.86 1.56.96.2.1.32.08.44-.05.12-.13.53-.61.68-.82.14-.2.29-.17.49-.1.2.07 1.28.6 1.5.71.22.11.37.17.43.27.06.1.06.6-.14 1.16Z" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const { t } = useLanguage();
-  
+
+  const socialLinks = [
+    { href: 'https://t.me/ATLASCAPITALco', label: 'Telegram', type: 'telegram' as const },
+    { href: 'https://wa.me/14065646451?s=t', label: 'WhatsApp', type: 'whatsapp' as const },
+  ];
 
   const countries = [
     'United States',
@@ -44,6 +71,20 @@ export default function Home() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-3 rounded-full border border-[color:var(--primary-gold)]/35 bg-[linear-gradient(135deg,rgba(201,169,97,0.12),rgba(13,17,23,0.02))] p-2 shadow-[0_10px_30px_rgba(201,169,97,0.12)]">
+              {socialLinks.map((link) => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={link.label}
+                  className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--primary-gold)]/40 bg-[color:var(--bg-dark-navy)] text-[color:var(--primary-gold)] shadow-[0_8px_18px_rgba(201,169,97,0.18)] transition duration-200 hover:scale-105 hover:border-[color:var(--primary-gold)] hover:bg-[rgba(201,169,97,0.1)]"
+                >
+                  <SocialIcon type={link.type} />
+                </a>
+              ))}
+            </div>
             <LanguageSelector />
             <ThemeToggle />
             <Link
@@ -145,11 +186,26 @@ export default function Home() {
           </div>
         </section>
 
-        <footer className="relative z-10 mt-6 rounded-[20px] bg-[color:var(--surface-elevated)]/90 p-6 text-sm text-[color:var(--text-secondary)]">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <footer className="relative z-10 mt-6 rounded-[20px] border border-[color:var(--border-soft)] bg-[color:var(--surface-elevated)]/90 p-6 text-sm text-[color:var(--text-secondary)]">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-semibold">{t('contactSupport')}</p>
-              <p className="mt-1"><a href={SUPPORT_EMAIL} target="_blank" rel="noopener noreferrer" className="text-[color:var(--primary-gold)] underline">t.me/ATLASCAPITALco</a> — {t('supportHours')}</p>
+              <p className="font-semibold text-[color:var(--text-primary)]">{t('contactSupport')}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                {socialLinks.map((link) => (
+                  <a
+                    key={link.label}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full border border-[color:var(--primary-gold)]/40 bg-[color:var(--surface)] px-3 py-2 text-[color:var(--text-primary)] shadow-sm transition hover:border-[color:var(--primary-gold)] hover:bg-[rgba(201,169,97,0.06)]"
+                  >
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--bg-dark-navy)] text-[color:var(--primary-gold)]">
+                      <SocialIcon type={link.type} />
+                    </span>
+                    <span className="text-sm font-bold tracking-wide text-[color:var(--text-primary)]">{link.label}</span>
+                  </a>
+                ))}
+              </div>
             </div>
 
             <div className="flex gap-4">
