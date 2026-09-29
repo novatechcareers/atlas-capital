@@ -5,7 +5,6 @@ import { GlobalWinPopup } from "@/components/global-win-popup";
 import { AutoTradeEngine } from "@/components/auto-trade-engine";
 import { LiveTradeEngine } from "@/components/live-trade-engine";
 import { LanguageProvider } from "@/components/language-provider";
-import { GoogleTranslateBridge } from "@/components/google-translate-bridge";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,7 +34,6 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <LanguageProvider>
           {children}
-          <GoogleTranslateBridge />
         </LanguageProvider>
         <AutoTradeEngine />
         <LiveTradeEngine />
