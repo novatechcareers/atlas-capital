@@ -28,7 +28,8 @@ export default function AdminLiveTradePage() {
       }
 
       const profile = await syncTradingProfileFromServer(userId, 'live');
-      setMarketVolatility(Number.isFinite(Number(profile?.marketVolatility)) ? Number(profile.marketVolatility) : getLiveTradeSimulationVolatility());
+      const serverVolatility = Number(profile?.marketVolatility);
+      setMarketVolatility(Number.isFinite(serverVolatility) ? serverVolatility : getLiveTradeSimulationVolatility());
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
